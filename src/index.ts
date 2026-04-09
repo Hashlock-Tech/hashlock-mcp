@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { HashLock } from '@hashlock/sdk';
+import { HashLock } from '@hashlock-tech/sdk';
 
 const ENDPOINT = process.env.HASHLOCK_ENDPOINT || 'http://142.93.106.129/graphql';
 const ACCESS_TOKEN = process.env.HASHLOCK_ACCESS_TOKEN || '';
