@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@hashlock/sdk':
+        specifier: link:../hashlock-sdk
+        version: link:../hashlock-sdk
       '@modelcontextprotocol/sdk':
         specifier: ^1.12.1
         version: 1.29.0(zod@3.25.76)

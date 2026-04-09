@@ -1,10 +1,17 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { gql } from './graphql.js';
+import { HashLock } from '@hashlock/sdk';
 
 const ENDPOINT = process.env.HASHLOCK_ENDPOINT || 'http://142.93.106.129/graphql';
 const ACCESS_TOKEN = process.env.HASHLOCK_ACCESS_TOKEN || '';
+
+const hl = new HashLock({
+  endpoint: ENDPOINT,
+  accessToken: ACCESS_TOKEN,
+  retries: 2,
+  timeout: 30_000,
+});
 
 const server = new McpServer({
   name: 'hashlock',
@@ -26,15 +33,8 @@ server.tool(
     preimage: z.string().optional().describe('Secret preimage (only for initiator)'),
   },
   async ({ tradeId, txHash, role, timelock, hashlock, chainType, preimage }) => {
-    const data = await gql(ENDPOINT, ACCESS_TOKEN, `
-      mutation($tradeId: ID!, $txHash: String!, $role: HTLCRole!, $timelock: Int, $hashlock: String, $chainType: String, $preimage: String) {
-        fundHTLC(tradeId: $tradeId, txHash: $txHash, role: $role, timelock: $timelock, hashlock: $hashlock, chainType: $chainType, preimage: $preimage) {
-          tradeId txHash status
-        }
-      }
-    `, { tradeId, txHash, role, timelock, hashlock, chainType, preimage });
-
-    return { content: [{ type: 'text', text: JSON.stringify(data.fundHTLC, null, 2) }] };
+    const result = await hl.fundHTLC({ tradeId, txHash, role, timelock, hashlock, chainType, preimage });
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
   },
 );
 
@@ -50,15 +50,8 @@ server.tool(
     chainType: z.string().optional().describe('Chain type: evm, bitcoin, or sui'),
   },
   async ({ tradeId, txHash, preimage, chainType }) => {
-    const data = await gql(ENDPOINT, ACCESS_TOKEN, `
-      mutation($tradeId: ID!, $txHash: String!, $preimage: String!, $chainType: String) {
-        claimHTLC(tradeId: $tradeId, txHash: $txHash, preimage: $preimage, chainType: $chainType) {
-          tradeId status
-        }
-      }
-    `, { tradeId, txHash, preimage, chainType });
-
-    return { content: [{ type: 'text', text: JSON.stringify(data.claimHTLC, null, 2) }] };
+    const result = await hl.claimHTLC({ tradeId, txHash, preimage, chainType });
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
   },
 );
 
@@ -73,15 +66,8 @@ server.tool(
     chainType: z.string().optional().describe('Chain type: evm, bitcoin, or sui'),
   },
   async ({ tradeId, txHash, chainType }) => {
-    const data = await gql(ENDPOINT, ACCESS_TOKEN, `
-      mutation($tradeId: ID!, $txHash: String!, $chainType: String) {
-        refundHTLC(tradeId: $tradeId, txHash: $txHash, chainType: $chainType) {
-          tradeId status
-        }
-      }
-    `, { tradeId, txHash, chainType });
-
-    return { content: [{ type: 'text', text: JSON.stringify(data.refundHTLC, null, 2) }] };
+    const result = await hl.refundHTLC({ tradeId, txHash, chainType });
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
   },
 );
 
@@ -94,17 +80,8 @@ server.tool(
     tradeId: z.string().describe('Trade ID to query HTLC status for'),
   },
   async ({ tradeId }) => {
-    const data = await gql(ENDPOINT, ACCESS_TOKEN, `
-      query($tradeId: ID!) {
-        htlcStatus(tradeId: $tradeId) {
-          tradeId status
-          initiatorHTLC { id role status contractAddress hashlock timelock amount txHash chainType }
-          counterpartyHTLC { id role status contractAddress hashlock timelock amount txHash chainType }
-        }
-      }
-    `, { tradeId });
-
-    return { content: [{ type: 'text', text: JSON.stringify(data.htlcStatus, null, 2) }] };
+    const result = await hl.getHTLCStatus(tradeId);
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
   },
 );
 
@@ -122,15 +99,8 @@ server.tool(
     isBlind: z.boolean().optional().describe('Hide counterparty identity (blind auction mode)'),
   },
   async ({ baseToken, quoteToken, side, amount, expiresIn, isBlind }) => {
-    const data = await gql(ENDPOINT, ACCESS_TOKEN, `
-      mutation($baseToken: String!, $quoteToken: String!, $side: Side!, $amount: String!, $expiresIn: Int, $isBlind: Boolean) {
-        createRFQ(baseToken: $baseToken, quoteToken: $quoteToken, side: $side, amount: $amount, expiresIn: $expiresIn, isBlind: $isBlind) {
-          id baseToken quoteToken side amount status expiresAt createdAt
-        }
-      }
-    `, { baseToken, quoteToken, side, amount, expiresIn, isBlind });
-
-    return { content: [{ type: 'text', text: JSON.stringify(data.createRFQ, null, 2) }] };
+    const result = await hl.createRFQ({ baseToken, quoteToken, side, amount, expiresIn, isBlind });
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
   },
 );
 
@@ -146,15 +116,8 @@ server.tool(
     expiresIn: z.number().optional().describe('Quote expiration in seconds'),
   },
   async ({ rfqId, price, amount, expiresIn }) => {
-    const data = await gql(ENDPOINT, ACCESS_TOKEN, `
-      mutation($rfqId: ID!, $price: String!, $amount: String!, $expiresIn: Int) {
-        submitQuote(rfqId: $rfqId, price: $price, amount: $amount, expiresIn: $expiresIn) {
-          id rfqId price amount status createdAt
-        }
-      }
-    `, { rfqId, price, amount, expiresIn });
-
-    return { content: [{ type: 'text', text: JSON.stringify(data.submitQuote, null, 2) }] };
+    const result = await hl.submitQuote({ rfqId, price, amount, expiresIn });
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
   },
 );
 
