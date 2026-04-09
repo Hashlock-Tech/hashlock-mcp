@@ -1,0 +1,171 @@
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { z } from 'zod';
+import { gql } from './graphql.js';
+
+const ENDPOINT = process.env.HASHLOCK_ENDPOINT || 'http://142.93.106.129/graphql';
+const ACCESS_TOKEN = process.env.HASHLOCK_ACCESS_TOKEN || '';
+
+const server = new McpServer({
+  name: 'hashlock',
+  version: '0.1.0',
+});
+
+// ─── create_htlc ─────────────────────────────────────────────
+
+server.tool(
+  'create_htlc',
+  'Create and fund a Hash Time-Locked Contract (HTLC) for atomic OTC settlement. Records an on-chain ETH or ERC-20 lock transaction. The user must have already sent the lock tx on-chain. Returns trade ID and status.',
+  {
+    tradeId: z.string().describe('Trade ID from an accepted trade'),
+    txHash: z.string().describe('On-chain transaction hash of the HTLC lock (0x-prefixed)'),
+    role: z.enum(['INITIATOR', 'COUNTERPARTY']).describe('Your role in the trade'),
+    timelock: z.number().optional().describe('HTLC expiry as Unix timestamp'),
+    hashlock: z.string().optional().describe('SHA-256 hashlock (0x-prefixed hex)'),
+    chainType: z.string().optional().describe('Chain type: evm, bitcoin, or sui'),
+    preimage: z.string().optional().describe('Secret preimage (only for initiator)'),
+  },
+  async ({ tradeId, txHash, role, timelock, hashlock, chainType, preimage }) => {
+    const data = await gql(ENDPOINT, ACCESS_TOKEN, `
+      mutation($tradeId: ID!, $txHash: String!, $role: HTLCRole!, $timelock: Int, $hashlock: String, $chainType: String, $preimage: String) {
+        fundHTLC(tradeId: $tradeId, txHash: $txHash, role: $role, timelock: $timelock, hashlock: $hashlock, chainType: $chainType, preimage: $preimage) {
+          tradeId txHash status
+        }
+      }
+    `, { tradeId, txHash, role, timelock, hashlock, chainType, preimage });
+
+    return { content: [{ type: 'text', text: JSON.stringify(data.fundHTLC, null, 2) }] };
+  },
+);
+
+// ─── withdraw_htlc ───────────────────────────────────────────
+
+server.tool(
+  'withdraw_htlc',
+  'Claim an HTLC by revealing the preimage. Records the on-chain claim transaction. The counterparty uses the revealed preimage to claim the other side of the atomic swap.',
+  {
+    tradeId: z.string().describe('Trade ID'),
+    txHash: z.string().describe('On-chain claim transaction hash (0x-prefixed)'),
+    preimage: z.string().describe('The 32-byte secret preimage (0x-prefixed hex)'),
+    chainType: z.string().optional().describe('Chain type: evm, bitcoin, or sui'),
+  },
+  async ({ tradeId, txHash, preimage, chainType }) => {
+    const data = await gql(ENDPOINT, ACCESS_TOKEN, `
+      mutation($tradeId: ID!, $txHash: String!, $preimage: String!, $chainType: String) {
+        claimHTLC(tradeId: $tradeId, txHash: $txHash, preimage: $preimage, chainType: $chainType) {
+          tradeId status
+        }
+      }
+    `, { tradeId, txHash, preimage, chainType });
+
+    return { content: [{ type: 'text', text: JSON.stringify(data.claimHTLC, null, 2) }] };
+  },
+);
+
+// ─── refund_htlc ─────────────────────────────────────────────
+
+server.tool(
+  'refund_htlc',
+  'Refund an HTLC after the timelock has expired. Records the on-chain refund transaction. Only the original sender can refund, and only after the timelock deadline.',
+  {
+    tradeId: z.string().describe('Trade ID'),
+    txHash: z.string().describe('On-chain refund transaction hash (0x-prefixed)'),
+    chainType: z.string().optional().describe('Chain type: evm, bitcoin, or sui'),
+  },
+  async ({ tradeId, txHash, chainType }) => {
+    const data = await gql(ENDPOINT, ACCESS_TOKEN, `
+      mutation($tradeId: ID!, $txHash: String!, $chainType: String) {
+        refundHTLC(tradeId: $tradeId, txHash: $txHash, chainType: $chainType) {
+          tradeId status
+        }
+      }
+    `, { tradeId, txHash, chainType });
+
+    return { content: [{ type: 'text', text: JSON.stringify(data.refundHTLC, null, 2) }] };
+  },
+);
+
+// ─── get_htlc ────────────────────────────────────────────────
+
+server.tool(
+  'get_htlc',
+  'Get the current HTLC status for a trade, including both initiator and counterparty HTLCs. Shows contract addresses, lock amounts, timelocks, and settlement status.',
+  {
+    tradeId: z.string().describe('Trade ID to query HTLC status for'),
+  },
+  async ({ tradeId }) => {
+    const data = await gql(ENDPOINT, ACCESS_TOKEN, `
+      query($tradeId: ID!) {
+        htlcStatus(tradeId: $tradeId) {
+          tradeId status
+          initiatorHTLC { id role status contractAddress hashlock timelock amount txHash chainType }
+          counterpartyHTLC { id role status contractAddress hashlock timelock amount txHash chainType }
+        }
+      }
+    `, { tradeId });
+
+    return { content: [{ type: 'text', text: JSON.stringify(data.htlcStatus, null, 2) }] };
+  },
+);
+
+// ─── create_rfq ──────────────────────────────────────────────
+
+server.tool(
+  'create_rfq',
+  'Create a Request for Quote (RFQ) to buy or sell crypto OTC. Broadcasts to market makers who respond with prices. Supported tokens: ETH, BTC, USDT, USDC, WBTC, WETH.',
+  {
+    baseToken: z.string().describe('Base asset symbol (e.g., ETH, BTC, WBTC)'),
+    quoteToken: z.string().describe('Quote asset symbol (e.g., USDT, USDC)'),
+    side: z.enum(['BUY', 'SELL']).describe('BUY to purchase base token, SELL to sell base token'),
+    amount: z.string().describe('Amount of base token (e.g., "1.5" for 1.5 ETH)'),
+    expiresIn: z.number().optional().describe('RFQ expiration in seconds (default: server-configured)'),
+    isBlind: z.boolean().optional().describe('Hide counterparty identity (blind auction mode)'),
+  },
+  async ({ baseToken, quoteToken, side, amount, expiresIn, isBlind }) => {
+    const data = await gql(ENDPOINT, ACCESS_TOKEN, `
+      mutation($baseToken: String!, $quoteToken: String!, $side: Side!, $amount: String!, $expiresIn: Int, $isBlind: Boolean) {
+        createRFQ(baseToken: $baseToken, quoteToken: $quoteToken, side: $side, amount: $amount, expiresIn: $expiresIn, isBlind: $isBlind) {
+          id baseToken quoteToken side amount status expiresAt createdAt
+        }
+      }
+    `, { baseToken, quoteToken, side, amount, expiresIn, isBlind });
+
+    return { content: [{ type: 'text', text: JSON.stringify(data.createRFQ, null, 2) }] };
+  },
+);
+
+// ─── respond_rfq ─────────────────────────────────────────────
+
+server.tool(
+  'respond_rfq',
+  'Submit a price quote in response to an open RFQ. Market makers use this to offer their price. If the RFQ creator accepts your quote, a trade is automatically created.',
+  {
+    rfqId: z.string().describe('ID of the RFQ to respond to'),
+    price: z.string().describe('Price per unit of base token in quote token terms (e.g., "3450.00")'),
+    amount: z.string().describe('Amount of base token to offer'),
+    expiresIn: z.number().optional().describe('Quote expiration in seconds'),
+  },
+  async ({ rfqId, price, amount, expiresIn }) => {
+    const data = await gql(ENDPOINT, ACCESS_TOKEN, `
+      mutation($rfqId: ID!, $price: String!, $amount: String!, $expiresIn: Int) {
+        submitQuote(rfqId: $rfqId, price: $price, amount: $amount, expiresIn: $expiresIn) {
+          id rfqId price amount status createdAt
+        }
+      }
+    `, { rfqId, price, amount, expiresIn });
+
+    return { content: [{ type: 'text', text: JSON.stringify(data.submitQuote, null, 2) }] };
+  },
+);
+
+// ─── Start server ────────────────────────────────────────────
+
+async function main() {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+}
+
+main().catch((err) => {
+  console.error('HashLock MCP server failed:', err);
+  process.exit(1);
+});
