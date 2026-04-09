@@ -18,17 +18,20 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "lint": "tsc --noEmit",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@hashlock/sdk": "link:../hashlock-sdk",
+    "@hashlock/sdk": "^0.1.0",
     "@modelcontextprotocol/sdk": "^1.12.1",
     "zod": "^3.23.0"
   },
   "devDependencies": {
     "tsup": "^8.0.0",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "vitest": "^4.1.4"
   },
   "keywords": [
     "mcp",

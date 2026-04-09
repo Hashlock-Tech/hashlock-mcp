@@ -1,0 +1,56 @@
+{
+  "name": "hashlock",
+  "description": "OTC crypto trading with HTLC atomic settlement. Create trades, lock assets, and settle trustlessly across Ethereum and Bitcoin.",
+  "vendor": "HashLock Tech",
+  "sourceUrl": "https://github.com/Hashlock-Tech/hashlock-mcp",
+  "homepage": "https://hashlock.tech",
+  "license": "MIT",
+  "runtime": "node",
+  "transport": ["stdio"],
+  "features": {
+    "tools": true,
+    "resources": false,
+    "prompts": false
+  },
+  "tools": [
+    {
+      "name": "create_htlc",
+      "description": "Create and fund an HTLC for atomic OTC settlement"
+    },
+    {
+      "name": "withdraw_htlc",
+      "description": "Claim an HTLC by revealing the preimage"
+    },
+    {
+      "name": "refund_htlc",
+      "description": "Refund an HTLC after timelock expiry"
+    },
+    {
+      "name": "get_htlc",
+      "description": "Query HTLC status for a trade"
+    },
+    {
+      "name": "create_rfq",
+      "description": "Create a Request for Quote to buy or sell crypto"
+    },
+    {
+      "name": "respond_rfq",
+      "description": "Submit a price quote for an open RFQ"
+    }
+  ],
+  "installation": {
+    "npm": "@hashlock/mcp",
+    "command": "npx -y @hashlock/mcp",
+    "env": {
+      "HASHLOCK_ACCESS_TOKEN": {
+        "description": "JWT authentication token from HashLock platform",
+        "required": true
+      },
+      "HASHLOCK_ENDPOINT": {
+        "description": "GraphQL API endpoint",
+        "required": false,
+        "default": "http://142.93.106.129/graphql"
+      }
+    }
+  }
+}
