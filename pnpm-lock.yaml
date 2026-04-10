@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@hashlock-tech/sdk':
-        specifier: ^0.1.0
-        version: 0.1.0
+        specifier: ^0.1.3
+        version: 0.1.3
       '@modelcontextprotocol/sdk':
         specifier: ^1.12.1
         version: 1.29.0(zod@3.25.76)
@@ -195,8 +195,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@hashlock-tech/sdk@0.1.0':
-    resolution: {integrity: sha512-pE+S9QRgnIkmzmIwx/9eYWU10goY82TTHVoow6OdWuW8gmBfP4gWhpdVK83MFkyPEhX6CiZj5U9/Hyz2cK3+gQ==}
+  '@hashlock-tech/sdk@0.1.3':
+    resolution: {integrity: sha512-kDiTJ4G0DPE75KWWF8lm5N3xASmHSCKQWY5u6MUYe6S4JwC2Y0no8TF6bRxHYKWnIX8okS99CMtnm0kHJ/x4TA==}
     engines: {node: '>=18'}
 
   '@hono/node-server@1.19.13':
@@ -1356,7 +1356,7 @@ snapshots:
   '@esbuild/win32-x64@0.27.7':
     optional: true
 
-  '@hashlock-tech/sdk@0.1.0': {}
+  '@hashlock-tech/sdk@0.1.3': {}
 
   '@hono/node-server@1.19.13(hono@4.12.12)':
     dependencies:
