@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { HashLock } from '@hashlock/sdk';
+import { HashLock } from '@hashlock-tech/sdk';
+import type { PrincipalAttestation } from '@hashlock-tech/sdk';
 
 // We test that the MCP server's tool handlers correctly call SDK methods.
 // Since the MCP server instantiates HashLock internally, we test the SDK
@@ -199,6 +200,131 @@ describe('MCP Tool → SDK Integration', () => {
 
       const body = JSON.parse(fetchFn.mock.calls[0][1].body);
       expect(body.variables.expiresIn).toBe(300);
+    });
+  });
+
+  // ─── Agent principal layer (EXPERIMENTAL) ──────────────
+
+  describe('agent principal fields pass through MCP → SDK', () => {
+    const att: PrincipalAttestation = {
+      principalId: 'pr_acme_001',
+      principalType: 'INSTITUTION',
+      tier: 'INSTITUTIONAL',
+      blindId: 'ag_5g7k92bq',
+      issuedAt: Math.floor(Date.now() / 1000),
+      expiresAt: Math.floor(Date.now() / 1000) + 3600,
+      proof: '0xdeadbeef',
+    };
+
+    it('create_rfq accepts attestation + agentInstance + tier filters', async () => {
+      const rfq = {
+        id: 'rfq-agent',
+        baseToken: 'ETH',
+        quoteToken: 'USDT',
+        side: 'SELL',
+        amount: '5.0',
+        status: 'ACTIVE',
+        isBlind: true,
+        createdAt: '2026-04-11',
+        userId: 'u1',
+        expiresAt: null,
+        quotesCount: 0,
+      };
+      const fetchFn = mockFetch({ data: { createRFQ: rfq } });
+      const hl = createSDK(fetchFn);
+
+      const result = await hl.createRFQ({
+        baseToken: 'ETH',
+        quoteToken: 'USDT',
+        side: 'SELL',
+        amount: '5.0',
+        isBlind: true,
+        attestation: att,
+        agentInstance: { instanceId: 'ag_5g7k92bq', strategy: 'mm-eth-usdt' },
+        minCounterpartyTier: 'STANDARD',
+        hideIdentity: true,
+      });
+
+      expect(result.id).toBe('rfq-agent');
+      // GraphQL wire-through is pending — variables are a strict
+      // subset of the GraphQL schema, so new fields are dropped at
+      // the SDK-client layer and never reach the endpoint.
+      const body = JSON.parse(fetchFn.mock.calls[0][1].body);
+      expect(body.variables.baseToken).toBe('ETH');
+      expect(body.variables.isBlind).toBe(true);
+    });
+
+    it('respond_rfq accepts attestation + hideIdentity', async () => {
+      const quote = {
+        id: 'q-agent',
+        rfqId: 'rfq-1',
+        marketMakerId: 'mm-1',
+        price: '3450',
+        amount: '1.0',
+        status: 'PENDING',
+        createdAt: '2026-04-11',
+        expiresAt: null,
+      };
+      const fetchFn = mockFetch({ data: { submitQuote: quote } });
+      const hl = createSDK(fetchFn);
+
+      const result = await hl.submitQuote({
+        rfqId: 'rfq-1',
+        price: '3450',
+        amount: '1.0',
+        attestation: att,
+        agentInstance: { instanceId: 'ag_5g7k92bq' },
+        hideIdentity: true,
+      });
+
+      expect(result.id).toBe('q-agent');
+    });
+
+    it('create_htlc accepts attestation + agentInstance', async () => {
+      const fetchFn = mockFetch({
+        data: { fundHTLC: { tradeId: 't-1', txHash: '0xabc', status: 'PENDING' } },
+      });
+      const hl = createSDK(fetchFn);
+
+      const result = await hl.fundHTLC({
+        tradeId: 't-1',
+        txHash: '0xabc',
+        role: 'INITIATOR',
+        chainType: 'evm',
+        attestation: att,
+        agentInstance: { instanceId: 'ag_5g7k92bq', strategy: 'mm-eth-usdt' },
+      });
+
+      expect(result.status).toBe('PENDING');
+    });
+
+    it('existing human calls still work without attestation (backward compat)', async () => {
+      const rfq = {
+        id: 'rfq-human',
+        baseToken: 'ETH',
+        quoteToken: 'USDT',
+        side: 'BUY',
+        amount: '1.0',
+        status: 'ACTIVE',
+        isBlind: false,
+        createdAt: '2026-04-11',
+        userId: 'u1',
+        expiresAt: null,
+        quotesCount: 0,
+      };
+      const fetchFn = mockFetch({ data: { createRFQ: rfq } });
+      const hl = createSDK(fetchFn);
+
+      const result = await hl.createRFQ({
+        baseToken: 'ETH',
+        quoteToken: 'USDT',
+        side: 'BUY',
+        amount: '1.0',
+      });
+
+      expect(result.id).toBe('rfq-human');
+      const body = JSON.parse(fetchFn.mock.calls[0][1].body);
+      expect(body.variables.attestation).toBeUndefined();
     });
   });
 
