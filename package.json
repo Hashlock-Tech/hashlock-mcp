@@ -1,6 +1,6 @@
 {
   "name": "@hashlock-tech/mcp",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "mcpName": "io.github.BarisSozen/hashlock-mcp",
   "description": "MCP server for HashLock OTC — enables AI agents to create HTLCs, trade, and settle atomically",
   "license": "MIT",
