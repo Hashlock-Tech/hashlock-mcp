@@ -1,19 +1,24 @@
 {
   "name": "@hashlock-tech/mcp",
-  "version": "0.1.2",
-  "mcpName": "io.github.BarisSozen/hashlock-mcp",
-  "description": "MCP server for HashLock OTC — enables AI agents to create HTLCs, trade, and settle atomically",
+  "version": "0.1.7",
+  "mcpName": "io.github.Hashlock-Tech/hashlock",
+  "description": "Hashlock Markets — sealed-bid intent trading + HTLC atomic settlement for AI agents. Create RFQs, respond as market maker, and settle cross-chain swaps on Ethereum, Bitcoin, and SUI. NOT the cryptographic HTLC primitive. NOT affiliated with Hashlock Pty Ltd (Australia).",
   "license": "MIT",
+  "homepage": "https://hashlock.markets",
+  "author": {
+    "name": "Hashlock Corp.",
+    "email": "dev@hashlock.markets"
+  },
   "type": "module",
   "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "bin": {
     "hashlock-mcp": "./dist/index.js"
   },
   "files": [
     "dist",
     "README.md",
-    "LICENSE",
-    "llms-install.md"
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsup",
@@ -37,16 +42,33 @@
   },
   "keywords": [
     "mcp",
+    "mcp-server",
+    "model-context-protocol",
     "hashlock",
+    "hashlock-markets",
     "htlc",
     "otc",
     "claude",
     "ai-agent",
-    "atomic-swap"
+    "atomic-swap",
+    "defi",
+    "sealed-bid",
+    "intent-protocol",
+    "crypto-trading",
+    "rfq",
+    "cross-chain",
+    "ethereum",
+    "bitcoin",
+    "sui",
+    "stablecoin",
+    "rwa"
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/Hashlock-Tech/hashlock-mcp"
+    "url": "git+https://github.com/Hashlock-Tech/hashlock-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Hashlock-Tech/hashlock-mcp/issues"
   },
   "engines": {
     "node": ">=18"

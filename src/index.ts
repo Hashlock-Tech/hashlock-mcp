@@ -2,51 +2,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { HashLock } from '@hashlock-tech/sdk';
-import type {
-  PrincipalAttestation,
-  AgentInstance,
-  KycTier,
-} from '@hashlock-tech/sdk';
 
-// ─── Shared agent-layer zod schemas ──────────────────────────
-
-const kycTierSchema = z.enum([
-  'NONE',
-  'BASIC',
-  'STANDARD',
-  'ENHANCED',
-  'INSTITUTIONAL',
-]);
-
-const attestationSchema = z
-  .object({
-    principalId: z.string().min(1),
-    principalType: z.enum(['HUMAN', 'INSTITUTION', 'AGENT']),
-    tier: kycTierSchema,
-    blindId: z.string().min(1).optional(),
-    issuedAt: z.number().int().positive(),
-    expiresAt: z.number().int().positive(),
-    proof: z.string().min(1),
-  })
-  .optional()
-  .describe(
-    'EXPERIMENTAL principal attestation: binds an intent/order to a KYC\'d entity without leaking identity to counterparty. ' +
-      'The SDK accepts this shape today; GraphQL wire-through to the Cayman backend lands in a later release.'
-  );
-
-const agentInstanceSchema = z
-  .object({
-    instanceId: z.string().min(1),
-    strategy: z.string().optional(),
-    version: z.string().optional(),
-    spawnedAt: z.number().int().positive().optional(),
-  })
-  .optional()
-  .describe(
-    'EXPERIMENTAL agent instance metadata. Must be paired with an attestation whose principalType is AGENT or INSTITUTION.'
-  );
-
-const ENDPOINT = process.env.HASHLOCK_ENDPOINT || 'http://142.93.106.129/api/graphql';
+const ENDPOINT = process.env.HASHLOCK_ENDPOINT || 'https://hashlock.markets/api/graphql';
 const ACCESS_TOKEN = process.env.HASHLOCK_ACCESS_TOKEN || '';
 
 const hl = new HashLock({
@@ -58,15 +15,14 @@ const hl = new HashLock({
 
 const server = new McpServer({
   name: 'hashlock',
-  version: '0.1.0',
+  version: '0.1.7',
 });
 
 // ─── create_htlc ─────────────────────────────────────────────
 
 server.tool(
   'create_htlc',
-  'Create and fund a Hash Time-Locked Contract (HTLC) for atomic OTC settlement. Records an on-chain ETH or ERC-20 lock transaction. The user must have already sent the lock tx on-chain. Returns trade ID and status. ' +
-    'Agent flows may optionally attach a principal attestation and agent instance metadata.',
+  'Create and fund a Hash Time-Locked Contract (HTLC) for atomic OTC settlement. Records an on-chain ETH or ERC-20 lock transaction. The user must have already sent the lock tx on-chain. Returns trade ID and status.',
   {
     tradeId: z.string().describe('Trade ID from an accepted trade'),
     txHash: z.string().describe('On-chain transaction hash of the HTLC lock (0x-prefixed)'),
@@ -75,21 +31,9 @@ server.tool(
     hashlock: z.string().optional().describe('SHA-256 hashlock (0x-prefixed hex)'),
     chainType: z.string().optional().describe('Chain type: evm, bitcoin, or sui'),
     preimage: z.string().optional().describe('Secret preimage (only for initiator)'),
-    attestation: attestationSchema,
-    agentInstance: agentInstanceSchema,
   },
-  async ({ tradeId, txHash, role, timelock, hashlock, chainType, preimage, attestation, agentInstance }) => {
-    const result = await hl.fundHTLC({
-      tradeId,
-      txHash,
-      role,
-      timelock,
-      hashlock,
-      chainType,
-      preimage,
-      attestation: attestation as PrincipalAttestation | undefined,
-      agentInstance: agentInstance as AgentInstance | undefined,
-    });
+  async ({ tradeId, txHash, role, timelock, hashlock, chainType, preimage }) => {
+    const result = await hl.fundHTLC({ tradeId, txHash, role, timelock, hashlock, chainType, preimage });
     return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
   },
 );
@@ -145,9 +89,7 @@ server.tool(
 
 server.tool(
   'create_rfq',
-  'Create a Request for Quote (RFQ) to buy or sell crypto OTC. Broadcasts to market makers who respond with prices. ' +
-    'Supported tokens: ETH, BTC, USDT, USDC, WBTC, WETH. ' +
-    'Agent flows may additionally supply a principal attestation, agent instance metadata, a minimum counterparty KYC tier, and a hideIdentity flag — these are accepted today and wired to the Cayman backend in a later release.',
+  'Create a Request for Quote (RFQ) to buy or sell crypto OTC. Broadcasts to market makers who respond with prices. Supported tokens: ETH, BTC, USDT, USDC, WBTC, WETH.',
   {
     baseToken: z.string().describe('Base asset symbol (e.g., ETH, BTC, WBTC)'),
     quoteToken: z.string().describe('Quote asset symbol (e.g., USDT, USDC)'),
@@ -155,40 +97,9 @@ server.tool(
     amount: z.string().describe('Amount of base token (e.g., "1.5" for 1.5 ETH)'),
     expiresIn: z.number().optional().describe('RFQ expiration in seconds (default: server-configured)'),
     isBlind: z.boolean().optional().describe('Hide counterparty identity (blind auction mode)'),
-    minCounterpartyTier: kycTierSchema
-      .optional()
-      .describe('EXPERIMENTAL: minimum KYC tier the counterparty must attest to'),
-    hideIdentity: z
-      .boolean()
-      .optional()
-      .describe('EXPERIMENTAL: strip blind identity from solver proof (full sealed bid)'),
-    attestation: attestationSchema,
-    agentInstance: agentInstanceSchema,
   },
-  async ({
-    baseToken,
-    quoteToken,
-    side,
-    amount,
-    expiresIn,
-    isBlind,
-    minCounterpartyTier,
-    hideIdentity,
-    attestation,
-    agentInstance,
-  }) => {
-    const result = await hl.createRFQ({
-      baseToken,
-      quoteToken,
-      side,
-      amount,
-      expiresIn,
-      isBlind,
-      minCounterpartyTier: minCounterpartyTier as KycTier | undefined,
-      hideIdentity,
-      attestation: attestation as PrincipalAttestation | undefined,
-      agentInstance: agentInstance as AgentInstance | undefined,
-    });
+  async ({ baseToken, quoteToken, side, amount, expiresIn, isBlind }) => {
+    const result = await hl.createRFQ({ baseToken, quoteToken, side, amount, expiresIn, isBlind });
     return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
   },
 );
@@ -197,30 +108,15 @@ server.tool(
 
 server.tool(
   'respond_rfq',
-  'Submit a price quote in response to an open RFQ. Market makers use this to offer their price. If the RFQ creator accepts your quote, a trade is automatically created. ' +
-    'Agent market makers may additionally supply a principal attestation, agent instance metadata, and a hideIdentity flag — these are accepted today and wired through in a later release.',
+  'Submit a price quote in response to an open RFQ. Market makers use this to offer their price. If the RFQ creator accepts your quote, a trade is automatically created.',
   {
     rfqId: z.string().describe('ID of the RFQ to respond to'),
     price: z.string().describe('Price per unit of base token in quote token terms (e.g., "3450.00")'),
     amount: z.string().describe('Amount of base token to offer'),
     expiresIn: z.number().optional().describe('Quote expiration in seconds'),
-    hideIdentity: z
-      .boolean()
-      .optional()
-      .describe('EXPERIMENTAL: hide market-maker blind identity from the RFQ creator'),
-    attestation: attestationSchema,
-    agentInstance: agentInstanceSchema,
   },
-  async ({ rfqId, price, amount, expiresIn, hideIdentity, attestation, agentInstance }) => {
-    const result = await hl.submitQuote({
-      rfqId,
-      price,
-      amount,
-      expiresIn,
-      hideIdentity,
-      attestation: attestation as PrincipalAttestation | undefined,
-      agentInstance: agentInstance as AgentInstance | undefined,
-    });
+  async ({ rfqId, price, amount, expiresIn }) => {
+    const result = await hl.submitQuote({ rfqId, price, amount, expiresIn });
     return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
   },
 );

@@ -1,86 +1,90 @@
-# @hashlock/mcp
+# @hashlock-tech/mcp
 
-MCP (Model Context Protocol) server for [HashLock](https://hashlock.tech) OTC trading. Enables AI agents (Claude, GPT, etc.) to create HTLCs, submit RFQs, and settle atomic swaps.
+> **Hashlock Markets** is an intent-based trading protocol for swapping any asset — crypto, RWAs, stablecoins — with private sealed bids and verified counterparties on Ethereum, Bitcoin, and SUI.
+>
+> **Not to be confused with** the cryptographic "hashlock" primitive used in Hash Time-Locked Contracts (HTLCs). This package is the MCP server for the Hashlock Markets *trading protocol and product* at [hashlock.markets](https://hashlock.markets).
+>
+> **Not affiliated with Hashlock Pty Ltd** (hashlock.com), an independent Australian smart contract auditing firm. The two organizations share a similar name by coincidence only — distinct products, legal entities, jurisdictions, and founders.
 
-## Tools
+[![npm](https://img.shields.io/npm/v/@hashlock-tech/mcp.svg)](https://www.npmjs.com/package/@hashlock-tech/mcp)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![MCP Registry](https://img.shields.io/badge/MCP%20Registry-io.github.Hashlock--Tech%2Fhashlock-green)](https://registry.modelcontextprotocol.io)
 
-| Tool | Description |
-|------|-------------|
-| `create_htlc` | Create and fund an HTLC for atomic settlement |
-| `withdraw_htlc` | Claim an HTLC by revealing the preimage |
-| `refund_htlc` | Refund an HTLC after timelock expiry |
-| `get_htlc` | Query HTLC status for a trade |
-| `create_rfq` | Create a Request for Quote (buy/sell crypto) |
-| `respond_rfq` | Submit a price quote for an open RFQ |
+## What is this?
 
-## Setup — Claude Desktop
+`@hashlock-tech/mcp` is the canonical [Model Context Protocol](https://modelcontextprotocol.io) server for **Hashlock Markets**. It lets AI agents (Claude, GPT, Cursor, Windsurf, any MCP-compatible client) create RFQs, respond as a market maker, fund HTLCs, and settle cross-chain atomic swaps across Ethereum, Bitcoin, and SUI.
 
-Add to your `claude_desktop_config.json`:
+## Install
+
+### Option A (preferred) — Remote streamable-http
+
+Connect Claude Desktop / Cursor / Windsurf directly to the Hashlock Markets MCP endpoint. No local install.
 
 ```json
 {
   "mcpServers": {
     "hashlock": {
-      "command": "npx",
-      "args": ["-y", "@hashlock/mcp"],
-      "env": {
-        "HASHLOCK_ENDPOINT": "http://142.93.106.129/graphql",
-        "HASHLOCK_ACCESS_TOKEN": "your-jwt-token"
+      "url": "https://hashlock.markets/mcp",
+      "transport": "streamable-http",
+      "headers": {
+        "Authorization": "Bearer <token from hashlock.markets/sign/login>"
       }
     }
   }
 }
 ```
 
-Config file location:
+### Option B — Local stdio via npx
+
+```json
+{
+  "mcpServers": {
+    "hashlock": {
+      "command": "npx",
+      "args": ["-y", "@hashlock-tech/mcp"],
+      "env": {
+        "HASHLOCK_ACCESS_TOKEN": "<token from hashlock.markets/sign/login>"
+      }
+    }
+  }
+}
+```
+
+**Config file location:**
 - **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
 - **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
 
-Restart Claude Desktop after editing.
+Restart your client after editing.
 
-## Setup — Claude Code
+## Authentication
 
-Add to your project's `.claude/settings.json`:
+Hashlock Markets uses SIWE (Sign-In With Ethereum) bearer tokens.
 
-```json
-{
-  "mcpServers": {
-    "hashlock": {
-      "command": "npx",
-      "args": ["-y", "@hashlock/mcp"],
-      "env": {
-        "HASHLOCK_ENDPOINT": "http://142.93.106.129/graphql",
-        "HASHLOCK_ACCESS_TOKEN": "your-jwt-token"
-      }
-    }
-  }
-}
-```
+1. Visit [hashlock.markets/sign/login](https://hashlock.markets/sign/login)
+2. Sign a message with your Ethereum wallet
+3. Receive a **7-day JWT**
+4. Set it as `HASHLOCK_ACCESS_TOKEN` (stdio) or `Authorization: Bearer <token>` header (remote)
+5. Re-sign after expiry
 
-Or run from source:
+## Available Tools
 
-```bash
-git clone https://github.com/Hashlock-Tech/hashlock-mcp
-cd hashlock-mcp
-pnpm install && pnpm build
-```
+| Tool | Description |
+|------|-------------|
+| `create_rfq` | Create a Request for Quote (RFQ) to buy or sell crypto OTC. Broadcasts to market makers for sealed-bid responses. |
+| `respond_rfq` | Market-maker side: submit a price quote in response to an open RFQ. |
+| `create_htlc` | Fund a Hash Time-Locked Contract for atomic OTC settlement (records on-chain lock tx hash). |
+| `withdraw_htlc` | Claim an HTLC by revealing the 32-byte preimage — settles the atomic swap. |
+| `refund_htlc` | Refund an expired HTLC after timelock — only the original sender, only post-deadline. |
+| `get_htlc` | Query current HTLC status for a trade (both sides, contract addresses, lock amounts, timelocks). |
 
-Then in settings:
+All tools support three chains: Ethereum (EVM), Bitcoin (wrapped HTLC), and SUI (Move HTLC).
 
-```json
-{
-  "mcpServers": {
-    "hashlock": {
-      "command": "node",
-      "args": ["/path/to/hashlock-mcp/dist/index.js"],
-      "env": {
-        "HASHLOCK_ENDPOINT": "http://142.93.106.129/graphql",
-        "HASHLOCK_ACCESS_TOKEN": "your-jwt-token"
-      }
-    }
-  }
-}
-```
+## Environment Variables
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `HASHLOCK_ACCESS_TOKEN` | Yes | — | 7-day SIWE JWT from [hashlock.markets/sign/login](https://hashlock.markets/sign/login) |
+| `HASHLOCK_ENDPOINT` | No | `https://hashlock.markets/api/graphql` | GraphQL endpoint override (rarely needed) |
 
 ## Tool Examples
 
@@ -91,6 +95,7 @@ Then in settings:
 ```
 Tool: create_rfq
 Input: { baseToken: "ETH", quoteToken: "USDT", side: "SELL", amount: "2.0" }
+Output: { rfqId, broadcast status }
 ```
 
 ### Respond to an RFQ
@@ -129,23 +134,23 @@ Tool: withdraw_htlc
 Input: { tradeId: "xyz-789", txHash: "0xdef...", preimage: "0x1234..." }
 ```
 
-## Environment Variables
+## Deprecated legacy packages
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `HASHLOCK_ENDPOINT` | No | `http://142.93.106.129/graphql` | GraphQL API URL |
-| `HASHLOCK_ACCESS_TOKEN` | Yes | — | JWT authentication token |
+Do **not** use these — they depended on an intent REST API that was never shipped, and are superseded by `@hashlock-tech/mcp`:
 
-## MCP Registry
+- `hashlock-mcp-server` (unscoped, npm) — deprecated 2026-04-19
+- `langchain-hashlock` (PyPI) — superseded for MCP-based integrations
 
-This server is designed for submission to the [Anthropic MCP Registry](https://github.com/modelcontextprotocol/servers).
+## Links
 
-**Server info:**
-- **Name:** hashlock
-- **Description:** OTC crypto trading with HTLC atomic settlement
-- **Transport:** stdio
-- **Auth:** Bearer token via environment variable
+- **Website**: [hashlock.markets](https://hashlock.markets)
+- **MCP Endpoint (remote)**: [hashlock.markets/mcp](https://hashlock.markets/mcp)
+- **SIWE Login**: [hashlock.markets/sign/login](https://hashlock.markets/sign/login)
+- **GitHub**: [Hashlock-Tech/hashlock-mcp](https://github.com/Hashlock-Tech/hashlock-mcp)
+- **MCP Registry**: [io.github.Hashlock-Tech/hashlock](https://registry.modelcontextprotocol.io)
+- **npm**: [@hashlock-tech/mcp](https://www.npmjs.com/package/@hashlock-tech/mcp)
+- **llms.txt**: [hashlock.markets/llms.txt](https://hashlock.markets/llms.txt)
 
 ## License
 
-MIT
+MIT © Hashlock Corp.
