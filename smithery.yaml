@@ -1,0 +1,50 @@
+# Smithery.ai config for HashLock OTC MCP server.
+# Published: https://www.npmjs.com/package/@hashlock-tech/mcp
+# Source:    https://github.com/Hashlock-Tech/hashlock-mcp
+# Registry:  io.github.Hashlock-Tech/hashlock
+
+runtime: "stdio"
+start:
+  command: "npx"
+  args: ["-y", "@hashlock-tech/mcp"]
+
+config:
+  type: "object"
+  required: ["HASHLOCK_ACCESS_TOKEN"]
+  properties:
+    HASHLOCK_ACCESS_TOKEN:
+      type: "string"
+      title: "HashLock access token"
+      description: >-
+        Bearer token obtained from https://hashlock.markets/sign/login.
+        Issued via SIWE (Sign-In with Ethereum); valid for 7 days.
+        Re-sign after expiry.
+    HASHLOCK_ENDPOINT:
+      type: "string"
+      title: "GraphQL endpoint"
+      description: "Override the HashLock GraphQL endpoint. Default is production."
+      default: "https://hashlock.markets/api/graphql"
+
+metadata:
+  name: "HashLock OTC"
+  description: >-
+    Institutional-grade OTC crypto trading with HTLC atomic settlement
+    on Ethereum, Bitcoin, and Sui. Counterparty-risk-free via on-chain
+    hash time-locked contracts. 6 tools: create_htlc, withdraw_htlc,
+    refund_htlc, get_htlc, create_rfq, respond_rfq.
+  homepage: "https://hashlock.markets"
+  repository: "https://github.com/Hashlock-Tech/hashlock-mcp"
+  license: "MIT"
+  categories:
+    - "finance"
+    - "defi"
+    - "trading"
+  tags:
+    - "htlc"
+    - "atomic-swap"
+    - "otc"
+    - "ethereum"
+    - "bitcoin"
+    - "sui"
+    - "cross-chain"
+    - "rfq"
