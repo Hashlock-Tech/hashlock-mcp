@@ -3,7 +3,16 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { HashLock } from '@hashlock-tech/sdk';
 
-const ENDPOINT = process.env.HASHLOCK_ENDPOINT || 'https://hashlock.markets/api/graphql';
+// Default to the direct api-gateway endpoint (/graphql), NOT the browser-only
+// SSR proxy at /api/graphql. The SSR proxy reads the httpOnly `api-token`
+// cookie and ignores the Authorization header — which is incompatible with
+// the Bearer-JWT scheme this package sends via @hashlock-tech/sdk. External
+// MCP clients (Claude Desktop, Cursor, Windsurf, etc.) do not set cookies,
+// so they hit /api/graphql and get
+// `{"errors":[{"message":"Unauthorized – missing api-token",...}]}` 401.
+// /graphql (direct to api-gateway) accepts Bearer and works. Override via
+// HASHLOCK_ENDPOINT if you need to point at a staging / self-hosted deploy.
+const ENDPOINT = process.env.HASHLOCK_ENDPOINT || 'https://hashlock.markets/graphql';
 const ACCESS_TOKEN = process.env.HASHLOCK_ACCESS_TOKEN || '';
 
 const hl = new HashLock({
@@ -15,7 +24,7 @@ const hl = new HashLock({
 
 const server = new McpServer({
   name: 'hashlock',
-  version: '0.1.7',
+  version: '0.1.8',
 });
 
 // ─── create_htlc ─────────────────────────────────────────────
