@@ -9,6 +9,7 @@
 [![npm](https://img.shields.io/npm/v/@hashlock-tech/mcp.svg)](https://www.npmjs.com/package/@hashlock-tech/mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![MCP Registry](https://img.shields.io/badge/MCP%20Registry-io.github.Hashlock--Tech%2Fhashlock-green)](https://registry.modelcontextprotocol.io)
+[![smithery badge](https://smithery.ai/badge/bsozen-4wm5/hashlock-otc-v1)](https://smithery.ai/servers/bsozen-4wm5/hashlock-otc-v1)
 
 ## What is this?
 
