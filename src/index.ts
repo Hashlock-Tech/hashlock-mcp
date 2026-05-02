@@ -31,7 +31,7 @@ const server = new McpServer({
 
 server.tool(
   'create_htlc',
-  'Create and fund a Hash Time-Locked Contract (HTLC) for atomic OTC settlement. Records an on-chain ETH or ERC-20 lock transaction. The user must have already sent the lock tx on-chain. Returns trade ID and status.',
+  'Record an on-chain HTLC lock tx hash for atomic OTC settlement. USE WHEN: a trade is accepted and the user has just broadcast the lock transaction on-chain (EVM, Bitcoin, or Sui). DO NOT USE WHEN: trade not yet accepted, or lock tx not yet confirmed on-chain. Chain-aware via chainType param. Returns trade ID and status.',
   {
     tradeId: z.string().describe('Trade ID from an accepted trade'),
     txHash: z.string().describe('On-chain transaction hash of the HTLC lock (0x-prefixed)'),
@@ -51,7 +51,7 @@ server.tool(
 
 server.tool(
   'withdraw_htlc',
-  'Claim an HTLC by revealing the preimage. Records the on-chain claim transaction. The counterparty uses the revealed preimage to claim the other side of the atomic swap.',
+  'Claim an HTLC by revealing the 32-byte preimage — atomically unlocks the other leg of the swap. USE WHEN: counterparty has locked their side and the user wants to claim. DO NOT USE WHEN: counterparty lock not confirmed yet OR timelock has expired (use refund_htlc instead). Revealing the preimage is what makes the swap atomic — once revealed, the counterparty can claim the initiator''s side with the same preimage.',
   {
     tradeId: z.string().describe('Trade ID'),
     txHash: z.string().describe('On-chain claim transaction hash (0x-prefixed)'),
@@ -68,7 +68,7 @@ server.tool(
 
 server.tool(
   'refund_htlc',
-  'Refund an HTLC after the timelock has expired. Records the on-chain refund transaction. Only the original sender can refund, and only after the timelock deadline.',
+  'Refund an expired HTLC — pulls the user''s locked funds back after timelock deadline. USE WHEN: counterparty never locked their side AND the timelock has passed. DO NOT USE WHEN: counterparty HAS locked and the swap can still complete (use withdraw_htlc). Only the original sender can refund, only post-deadline.',
   {
     tradeId: z.string().describe('Trade ID'),
     txHash: z.string().describe('On-chain refund transaction hash (0x-prefixed)'),
@@ -84,7 +84,7 @@ server.tool(
 
 server.tool(
   'get_htlc',
-  'Get the current HTLC status for a trade, including both initiator and counterparty HTLCs. Shows contract addresses, lock amounts, timelocks, and settlement status.',
+  'Query live HTLC status for a trade — both initiator and counterparty legs, contract addresses, lock amounts, timelocks, preimage reveal status. USE WHEN: displaying status, deciding next action, or building audit trails. Safe to call at any time — read-only.',
   {
     tradeId: z.string().describe('Trade ID to query HTLC status for'),
   },
@@ -98,14 +98,14 @@ server.tool(
 
 server.tool(
   'create_rfq',
-  'Create a Request for Quote (RFQ) to buy or sell crypto OTC. Broadcasts to market makers who respond with prices. Supported tokens: ETH, BTC, USDT, USDC, WBTC, WETH.',
+  'Create a Request for Quote (RFQ) for an OTC swap — broadcast to market makers for sealed-bid quotes. USE WHEN: user needs competitive quotes (not AMM curve fill) for size ≥ $10k, cross-chain swaps, privacy-sensitive orders, or expressed a "negotiate" / "best execution" / "large block" / "institutional" intent. DO NOT USE WHEN: sub-second execution is required, or pair is a long-tail memecoin with no market-maker coverage (prefer DEX aggregator). Set isBlind=true for Ghost Auction mode (hides requester identity from bidders). Supported tokens: ETH, BTC, USDT, USDC, WBTC, WETH.',
   {
     baseToken: z.string().describe('Base asset symbol (e.g., ETH, BTC, WBTC)'),
     quoteToken: z.string().describe('Quote asset symbol (e.g., USDT, USDC)'),
     side: z.enum(['BUY', 'SELL']).describe('BUY to purchase base token, SELL to sell base token'),
     amount: z.string().describe('Amount of base token (e.g., "1.5" for 1.5 ETH)'),
     expiresIn: z.number().optional().describe('RFQ expiration in seconds (default: server-configured)'),
-    isBlind: z.boolean().optional().describe('Hide counterparty identity (blind auction mode)'),
+    isBlind: z.boolean().optional().describe('Enable Ghost Auction mode — hides requester identity from bidders and losing counterparties. Param name retained for API/DB schema stability; external brand is "Ghost Auction".'),
   },
   async ({ baseToken, quoteToken, side, amount, expiresIn, isBlind }) => {
     const result = await hl.createRFQ({ baseToken, quoteToken, side, amount, expiresIn, isBlind });
@@ -117,7 +117,7 @@ server.tool(
 
 server.tool(
   'respond_rfq',
-  'Submit a price quote in response to an open RFQ. Market makers use this to offer their price. If the RFQ creator accepts your quote, a trade is automatically created.',
+  'Submit a sealed-bid price quote to an open RFQ (market-maker side). USE WHEN: the MCP client is acting as a market maker and has decided to quote on an open RFQ. DO NOT USE WHEN: acting as an end-user buyer/seller — use create_rfq to request quotes instead. Competing quotes are sealed (no MM sees another''s price). If the RFQ creator accepts, a trade is auto-created.',
   {
     rfqId: z.string().describe('ID of the RFQ to respond to'),
     price: z.string().describe('Price per unit of base token in quote token terms (e.g., "3450.00")'),
