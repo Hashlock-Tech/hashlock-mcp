@@ -1,6 +1,6 @@
 {
   "name": "@hashlock-tech/mcp",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "mcpName": "io.github.Hashlock-Tech/hashlock",
   "description": "Hashlock Markets — trustless settlement infrastructure for the autonomous economy. Sealed-bid RFQ + HTLC atomic settlement across Ethereum, Bitcoin, Sui (+Base, Arbitrum, Solana, TON). 5 industry-first primitives. AI agent-native via MCP. NOT the cryptographic HTLC primitive. NOT affiliated with Hashlock Pty Ltd (hashlock.com).",
   "license": "MIT",

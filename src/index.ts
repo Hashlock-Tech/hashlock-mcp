@@ -51,7 +51,7 @@ server.tool(
 
 server.tool(
   'withdraw_htlc',
-  'Claim an HTLC by revealing the 32-byte preimage — atomically unlocks the other leg of the swap. USE WHEN: counterparty has locked their side and the user wants to claim. DO NOT USE WHEN: counterparty lock not confirmed yet OR timelock has expired (use refund_htlc instead). Revealing the preimage is what makes the swap atomic — once revealed, the counterparty can claim the initiator''s side with the same preimage.',
+  'Claim an HTLC by revealing the 32-byte preimage — atomically unlocks the other leg of the swap. USE WHEN: counterparty has locked their side and the user wants to claim. DO NOT USE WHEN: counterparty lock not confirmed yet OR timelock has expired (use refund_htlc instead). Revealing the preimage is what makes the swap atomic — once revealed, the counterparty can claim the initiator\'s side with the same preimage.',
   {
     tradeId: z.string().describe('Trade ID'),
     txHash: z.string().describe('On-chain claim transaction hash (0x-prefixed)'),
@@ -68,7 +68,7 @@ server.tool(
 
 server.tool(
   'refund_htlc',
-  'Refund an expired HTLC — pulls the user''s locked funds back after timelock deadline. USE WHEN: counterparty never locked their side AND the timelock has passed. DO NOT USE WHEN: counterparty HAS locked and the swap can still complete (use withdraw_htlc). Only the original sender can refund, only post-deadline.',
+  'Refund an expired HTLC — pulls the user\'s locked funds back after timelock deadline. USE WHEN: counterparty never locked their side AND the timelock has passed. DO NOT USE WHEN: counterparty HAS locked and the swap can still complete (use withdraw_htlc). Only the original sender can refund, only post-deadline.',
   {
     tradeId: z.string().describe('Trade ID'),
     txHash: z.string().describe('On-chain refund transaction hash (0x-prefixed)'),
@@ -117,7 +117,7 @@ server.tool(
 
 server.tool(
   'respond_rfq',
-  'Submit a sealed-bid price quote to an open RFQ (market-maker side). USE WHEN: the MCP client is acting as a market maker and has decided to quote on an open RFQ. DO NOT USE WHEN: acting as an end-user buyer/seller — use create_rfq to request quotes instead. Competing quotes are sealed (no MM sees another''s price). If the RFQ creator accepts, a trade is auto-created.',
+  'Submit a sealed-bid price quote to an open RFQ (market-maker side). USE WHEN: the MCP client is acting as a market maker and has decided to quote on an open RFQ. DO NOT USE WHEN: acting as an end-user buyer/seller — use create_rfq to request quotes instead. Competing quotes are sealed (no MM sees another\'s price). If the RFQ creator accepts, a trade is auto-created.',
   {
     rfqId: z.string().describe('ID of the RFQ to respond to'),
     price: z.string().describe('Price per unit of base token in quote token terms (e.g., "3450.00")'),
