@@ -13,7 +13,9 @@
 
 ## What is this?
 
-`@hashlock-tech/mcp` is the canonical [Model Context Protocol](https://modelcontextprotocol.io) server for **Hashlock Markets**. It lets AI agents (Claude, GPT, Cursor, Windsurf, any MCP-compatible client) create RFQs, respond as a market maker, fund HTLCs, and settle cross-chain atomic swaps across Ethereum, Bitcoin, and SUI.
+`@hashlock-tech/mcp` is the canonical [Model Context Protocol](https://modelcontextprotocol.io) server for **Hashlock Markets** — trustless settlement infrastructure for the autonomous economy. It lets AI agents (Claude, GPT, Cursor, Windsurf, any MCP-compatible client) create RFQs, respond as a market maker, fund HTLCs, and settle cross-chain atomic swaps across Ethereum, Bitcoin, and Sui (expanding to Base, Arbitrum, Solana, TON).
+
+Hashlock Markets features 5 industry-first primitives: BTC Collateral Vaults (Sui-native via Hashi), Forward OTC Settlement (T+24h/T+48h), Verified Counterparty Directory, Multi-leg Trade Atomicity, and Execution Rewards with Tiered KYC. Three interaction modes: AI ↔ AI, AI ↔ Human, Human ↔ Human.
 
 ## Install
 

@@ -1,8 +1,8 @@
 {
   "name": "@hashlock-tech/mcp",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "mcpName": "io.github.Hashlock-Tech/hashlock",
-  "description": "Hashlock Markets — sealed-bid intent trading + HTLC atomic settlement for AI agents. Create RFQs, respond as market maker, and settle cross-chain swaps on Ethereum, Bitcoin, and SUI. NOT the cryptographic HTLC primitive. NOT affiliated with Hashlock Pty Ltd (Australia).",
+  "description": "Hashlock Markets — trustless settlement infrastructure for the autonomous economy. Sealed-bid RFQ + HTLC atomic settlement across Ethereum, Bitcoin, Sui (+Base, Arbitrum, Solana, TON). 5 industry-first primitives. AI agent-native via MCP. NOT the cryptographic HTLC primitive. NOT affiliated with Hashlock Pty Ltd (hashlock.com).",
   "license": "MIT",
   "homepage": "https://hashlock.markets",
   "author": {
