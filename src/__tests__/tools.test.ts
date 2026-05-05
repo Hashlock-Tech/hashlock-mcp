@@ -170,6 +170,25 @@ describe('MCP Tool → SDK Integration', () => {
       const result = await hl.createRFQ({ baseToken: 'BTC', quoteToken: 'USDC', side: 'BUY', amount: '0.5', isBlind: true });
       expect(result.isBlind).toBe(true);
     });
+
+    it('should support cross-chain SUI/sui ↔ ETH/sepolia RFQ via baseChain + quoteChain', async () => {
+      const rfq = { id: 'rfq-cross', baseToken: 'SUI', quoteToken: 'ETH', side: 'SELL', amount: '10', status: 'ACTIVE', isBlind: false, createdAt: '2026-05-06', userId: 'u1', expiresAt: null, quotesCount: 0 };
+      const fetchFn = mockFetch({ data: { createRFQ: rfq } });
+      const hl = createSDK(fetchFn);
+
+      await hl.createRFQ({
+        baseToken: 'SUI',
+        baseChain: 'sui',
+        quoteToken: 'ETH',
+        quoteChain: 'sepolia',
+        side: 'SELL',
+        amount: '10',
+      });
+
+      const body = JSON.parse(fetchFn.mock.calls[0][1].body);
+      expect(body.variables.baseChain).toBe('sui');
+      expect(body.variables.quoteChain).toBe('sepolia');
+    });
   });
 
   // ─── respond_rfq → submitQuote ─────────────────────────
