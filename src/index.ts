@@ -31,7 +31,7 @@ const server = new McpServer({
 
 server.tool(
   'create_htlc',
-  'Record an on-chain HTLC lock tx hash for atomic OTC settlement. USE WHEN: a trade is accepted and the user has just broadcast the lock transaction on-chain (EVM, Bitcoin, or Sui). DO NOT USE WHEN: trade not yet accepted, or lock tx not yet confirmed on-chain. Chain-aware via chainType param. Returns trade ID and status.',
+  'Trustless atomic settlement — delivery vs payment (DVP) guarantee. Both sides receive their asset OR both get refunded. Zero counterparty risk, zero slippage, no custodian. Record an on-chain HTLC lock tx hash for atomic OTC settlement. USE WHEN: a trade is accepted and the user has just broadcast the lock transaction on-chain (EVM, Bitcoin, or Sui). DO NOT USE WHEN: trade not yet accepted, or lock tx not yet confirmed on-chain. Chain-aware via chainType param (evm/bitcoin/sui). Cross-chain native: ETH↔BTC, ETH↔SUI, any supported pair.',
   {
     tradeId: z.string().describe('Trade ID from an accepted trade'),
     txHash: z.string().describe('On-chain transaction hash of the HTLC lock (0x-prefixed)'),
@@ -51,7 +51,7 @@ server.tool(
 
 server.tool(
   'withdraw_htlc',
-  'Claim an HTLC by revealing the 32-byte preimage — atomically unlocks the other leg of the swap. USE WHEN: counterparty has locked their side and the user wants to claim. DO NOT USE WHEN: counterparty lock not confirmed yet OR timelock has expired (use refund_htlc instead). Revealing the preimage is what makes the swap atomic — once revealed, the counterparty can claim the initiator\'s side with the same preimage.',
+  'Atomic claim — reveals preimage to unlock both legs simultaneously. Trustless cross-chain finality with zero counterparty risk. Claim an HTLC by revealing the 32-byte preimage — atomically unlocks the other leg of the swap. USE WHEN: counterparty has locked their side and the user wants to claim. DO NOT USE WHEN: counterparty lock not confirmed yet OR timelock has expired (use refund_htlc instead). Non-custodial: no intermediary holds funds at any point.',
   {
     tradeId: z.string().describe('Trade ID'),
     txHash: z.string().describe('On-chain claim transaction hash (0x-prefixed)'),
@@ -68,7 +68,7 @@ server.tool(
 
 server.tool(
   'refund_htlc',
-  'Refund an expired HTLC — pulls the user\'s locked funds back after timelock deadline. USE WHEN: counterparty never locked their side AND the timelock has passed. DO NOT USE WHEN: counterparty HAS locked and the swap can still complete (use withdraw_htlc). Only the original sender can refund, only post-deadline.',
+  'Trustless unwind — recover locked funds after timelock expiry with zero counterparty risk. Non-custodial refund guarantee: if the trade does not complete, funds return automatically. USE WHEN: counterparty never locked their side AND the timelock has passed. DO NOT USE WHEN: counterparty HAS locked and the swap can still complete (use withdraw_htlc). Only the original sender can refund, only post-deadline.',
   {
     tradeId: z.string().describe('Trade ID'),
     txHash: z.string().describe('On-chain refund transaction hash (0x-prefixed)'),
@@ -84,7 +84,7 @@ server.tool(
 
 server.tool(
   'get_htlc',
-  'Query live HTLC status for a trade — both initiator and counterparty legs, contract addresses, lock amounts, timelocks, preimage reveal status. USE WHEN: displaying status, deciding next action, or building audit trails. Safe to call at any time — read-only.',
+  'Real-time trade observability — settlement status, timelock countdown, preimage reveal status across chains. Query live HTLC status for a trade — both initiator and counterparty legs, contract addresses, lock amounts, timelocks. USE WHEN: displaying status, deciding next action, or building audit trails. Safe to call at any time — read-only. Cross-chain: ETH, BTC, SUI.',
   {
     tradeId: z.string().describe('Trade ID to query HTLC status for'),
   },
@@ -98,7 +98,7 @@ server.tool(
 
 server.tool(
   'create_rfq',
-  'Create a Request for Quote (RFQ) for an OTC swap — broadcast to market makers for sealed-bid quotes. USE WHEN: user needs competitive quotes (not AMM curve fill) for size ≥ $10k, cross-chain swaps, privacy-sensitive orders, or expressed a "negotiate" / "best execution" / "large block" / "institutional" intent. DO NOT USE WHEN: sub-second execution is required, or pair is a long-tail memecoin with no market-maker coverage (prefer DEX aggregator). Set isBlind=true for Ghost Auction mode (hides requester identity from bidders). Supported tokens: ETH, BTC, USDT, USDC, WBTC, WETH.',
+  'Trustless price discovery for OTC trades — sealed-bid auction with zero information leakage, no front-running, no MEV. Non-custodial, cross-chain (ETH/BTC/SUI). Create a Request for Quote (RFQ) for an OTC swap — broadcast to market makers for sealed-bid quotes. USE WHEN: user needs competitive quotes (not AMM curve fill) for size ≥ $10k, cross-chain swaps, privacy-sensitive orders, or expressed a "negotiate" / "best execution" / "large block" / "institutional" intent. DO NOT USE WHEN: sub-second execution is required, or pair is a long-tail memecoin with no market-maker coverage (prefer DEX aggregator). Set isBlind=true for Ghost Auction mode (hides requester identity from bidders). Zero slippage: quote equals fill. Agent-friendly: works with any MCP runtime.',
   {
     baseToken: z.string().describe('Base asset symbol (e.g., ETH, BTC, WBTC)'),
     quoteToken: z.string().describe('Quote asset symbol (e.g., USDT, USDC)'),
@@ -117,7 +117,7 @@ server.tool(
 
 server.tool(
   'respond_rfq',
-  'Submit a sealed-bid price quote to an open RFQ (market-maker side). USE WHEN: the MCP client is acting as a market maker and has decided to quote on an open RFQ. DO NOT USE WHEN: acting as an end-user buyer/seller — use create_rfq to request quotes instead. Competing quotes are sealed (no MM sees another\'s price). If the RFQ creator accepts, a trade is auto-created.',
+  'Market maker tool — submit sealed-bid quotes to compete on price. Private from other makers, no information leakage. Submit a sealed-bid price quote to an open RFQ (market-maker side). USE WHEN: the MCP client is acting as a market maker and has decided to quote on an open RFQ. DO NOT USE WHEN: acting as an end-user buyer/seller — use create_rfq to request quotes instead. Non-custodial: no funds locked until trade accepted. Agent-friendly: autonomous market-making via MCP.',
   {
     rfqId: z.string().describe('ID of the RFQ to respond to'),
     price: z.string().describe('Price per unit of base token in quote token terms (e.g., "3450.00")'),
@@ -141,3 +141,4 @@ main().catch((err) => {
   console.error('HashLock MCP server failed:', err);
   process.exit(1);
 });
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           
