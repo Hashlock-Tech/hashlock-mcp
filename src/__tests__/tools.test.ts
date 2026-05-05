@@ -191,6 +191,93 @@ describe('MCP Tool → SDK Integration', () => {
     });
   });
 
+  // ─── create_rfq description (intent-mapping rules) ─────────
+  // The description is the LLM-side intent compiler. These tests pin the
+  // load-bearing keywords so a future copy-edit cannot silently strip the
+  // rules that turn user free-text into structured params. Failure here
+  // means the LLM may start defaulting differently — verify the rule
+  // change is intentional before relaxing the assertion.
+
+  describe('create_rfq description carries intent-mapping rules', () => {
+    // Re-import the module under test so we can read the exported description
+    // constant directly. The tool registration itself happens at import time
+    // against the @modelcontextprotocol/sdk runtime; we only need the prose.
+    let description: string;
+
+    beforeEach(async () => {
+      // The description is a module-private constant; re-read the source so
+      // we don't have to refactor src/index.ts to export it. This keeps the
+      // test loosely coupled — a future refactor to `export const ...` is
+      // welcome and will not break this assertion.
+      const fs = await import('node:fs/promises');
+      const path = await import('node:path');
+      const url = await import('node:url');
+      // src/index.ts is a sibling of __tests__ — resolve by walking up one dir
+      const here = path.dirname(url.fileURLToPath(import.meta.url));
+      const indexPath = path.resolve(here, '..', 'index.ts');
+      description = await fs.readFile(indexPath, 'utf8');
+    });
+
+    it('lists every supported chain-qualified pair, including SUI on both chains', () => {
+      for (const pair of ['ETH/sepolia', 'ETH/ethereum', 'BTC/bitcoin-signet', 'BTC/bitcoin', 'USDC/sepolia', 'USDC/ethereum', 'USDT/ethereum', 'WBTC/ethereum', 'WETH/ethereum', 'SUI/sui', 'SUI/sui-testnet']) {
+        expect(description).toContain(pair);
+      }
+    });
+
+    it('flags cross-chain RFQs as first-class with the SUI ↔ Sepolia exemplar', () => {
+      expect(description).toMatch(/SUI\/sui ?[↔<>-]+ ?ETH\/sepolia/);
+    });
+
+    it('teaches the LLM the SELL / BUY verb mapping in English + Turkish', () => {
+      // English
+      expect(description).toMatch(/sell.*→.*SELL/i);
+      expect(description).toMatch(/buy.*→.*BUY/i);
+      // Turkish
+      expect(description).toMatch(/sat.*→.*SELL/i);
+      expect(description).toMatch(/al.*→.*BUY/i);
+    });
+
+    it('declares per-token mainnet chain inference defaults', () => {
+      expect(description).toMatch(/ETH\/USDC\/USDT\/WBTC\/WETH.*ethereum/);
+      expect(description).toMatch(/BTC.*bitcoin/);
+      expect(description).toMatch(/SUI.*sui/);
+    });
+
+    it('forbids silent testnet-ification of an unqualified leg', () => {
+      expect(description).toMatch(/Do NOT silently testnet-ify/i);
+    });
+
+    it('forbids pre-converting amount to wei / satoshis', () => {
+      expect(description).toMatch(/Do NOT pre-convert/i);
+      expect(description).toContain('wei');
+      expect(description).toContain('satoshi');
+    });
+
+    it('requires the LLM to RESTATE the deal and confirm before calling', () => {
+      expect(description).toMatch(/RESTATE/);
+      expect(description).toMatch(/Real funds/);
+      expect(description).toMatch(/confirm/i);
+    });
+
+    it('declares the expiresIn default of 300s', () => {
+      expect(description).toMatch(/Default 300/);
+    });
+
+    it('declares the isBlind trigger words including ghost / gizli', () => {
+      expect(description).toContain('ghost');
+      expect(description).toContain('blind');
+      expect(description).toContain('anonymous');
+      expect(description).toContain('gizli');
+    });
+
+    it('contains the verbatim cross-chain SUI/sui ↔ ETH/sepolia example shape', () => {
+      // Pin the canonical example so refactors keep it visible to the LLM —
+      // examples are the highest-leverage portion of the description.
+      expect(description).toMatch(/baseChain:\s*"sui"/);
+      expect(description).toMatch(/quoteChain:\s*"sepolia"/);
+    });
+  });
+
   // ─── respond_rfq → submitQuote ─────────────────────────
 
   describe('respond_rfq (submitQuote)', () => {
