@@ -24,7 +24,7 @@ const hl = new HashLock({
 
 const server = new McpServer({
   name: 'hashlock',
-  version: '0.1.11',
+  version: '0.1.12',
 });
 
 // ─── create_htlc ─────────────────────────────────────────────
