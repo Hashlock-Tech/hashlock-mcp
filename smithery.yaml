@@ -26,12 +26,13 @@ config:
       default: "https://hashlock.markets/api/graphql"
 
 metadata:
-  name: "HashLock OTC"
+  name: "Hashlock Markets"
   description: >-
-    Institutional-grade OTC crypto trading with HTLC atomic settlement
-    on Ethereum, Bitcoin, and Sui. Counterparty-risk-free via on-chain
-    hash time-locked contracts. 6 tools: create_htlc, withdraw_htlc,
-    refund_htlc, get_htlc, create_rfq, respond_rfq.
+    Trustless cross-chain OTC settlement for AI agents. Sealed-bid RFQ +
+    HTLC atomic swap. Zero slippage, zero counterparty risk, non-custodial.
+    DVP guarantee. ETH/BTC/SUI. Agent-friendly MCP interface for autonomous
+    trading. 6 tools: create_rfq, respond_rfq, create_htlc, withdraw_htlc,
+    refund_htlc, get_htlc.
   homepage: "https://hashlock.markets"
   repository: "https://github.com/Hashlock-Tech/hashlock-mcp"
   license: "MIT"

@@ -1,6 +1,6 @@
 # @hashlock-tech/mcp
 
-> **Hashlock Markets** is an intent-based trading protocol for swapping any asset — crypto, RWAs, stablecoins — with private sealed bids and verified counterparties on Ethereum, Bitcoin, and SUI.
+> **Hashlock Markets** — trustless, non-custodial OTC trading protocol with zero slippage and DVP (delivery-vs-payment) guarantee. Swap any asset — crypto, RWAs, stablecoins — with sealed-bid RFQ price discovery and HTLC atomic settlement across Ethereum, Bitcoin, and SUI. Agent-friendly via MCP.
 >
 > **Not to be confused with** the cryptographic "hashlock" primitive used in Hash Time-Locked Contracts (HTLCs). This package is the MCP server for the Hashlock Markets *trading protocol and product* at [hashlock.markets](https://hashlock.markets).
 >
@@ -148,12 +148,4 @@ Do **not** use these — they depended on an intent REST API that was never ship
 
 - **Website**: [hashlock.markets](https://hashlock.markets)
 - **MCP Endpoint (remote)**: [hashlock.markets/mcp](https://hashlock.markets/mcp)
-- **SIWE Login**: [hashlock.markets/sign/login](https://hashlock.markets/sign/login)
-- **GitHub**: [Hashlock-Tech/hashlock-mcp](https://github.com/Hashlock-Tech/hashlock-mcp)
-- **MCP Registry**: [io.github.Hashlock-Tech/hashlock](https://registry.modelcontextprotocol.io)
-- **npm**: [@hashlock-tech/mcp](https://www.npmjs.com/package/@hashlock-tech/mcp)
-- **llms.txt**: [hashlock.markets/llms.txt](https://hashlock.markets/llms.txt)
-
-## License
-
-MIT © Hashlock Corp.
+- **SIWE Login**: [hashlock.markets/sign/login](https://has
