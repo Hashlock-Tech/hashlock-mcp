@@ -112,31 +112,39 @@ describe('MCP Tool → SDK Integration', () => {
     });
   });
 
-  // ─── get_htlc → getHTLCStatus ─────────────────────────
+  // ─── get_htlc → getHTLCs ───────────────────────────────────────────
+  // get_htlc MUST use getHTLCs (queries `htlcs`, which the backend serves),
+  // NOT getHTLCStatus (queries htlcStatus.initiatorHTLC — a field the flat
+  // HTLCStatusResult type does not have; rejected at GraphQL validation for
+  // EVERY input). This test pins the working query shape.
 
-  describe('get_htlc (getHTLCStatus)', () => {
-    it('should return both initiator and counterparty HTLCs', async () => {
-      const htlcStatus = {
-        tradeId: 't-1',
-        status: 'BOTH_LOCKED',
-        initiatorHTLC: { id: 'h1', tradeId: 't-1', role: 'INITIATOR', status: 'ACTIVE', contractAddress: '0x1', hashlock: '0xh', timelock: 999, amount: '1.0', txHash: '0xa', chainType: 'evm' },
-        counterpartyHTLC: { id: 'h2', tradeId: 't-1', role: 'COUNTERPARTY', status: 'ACTIVE', contractAddress: '0x2', hashlock: '0xh', timelock: 888, amount: '3500', txHash: '0xb', chainType: 'evm' },
-      };
-      const fetchFn = mockFetch({ data: { htlcStatus } });
+  describe('get_htlc (getHTLCs)', () => {
+    it('returns the per-leg HTLC array for a known trade', async () => {
+      const htlcs = [
+        { id: 'h1', tradeId: 't-1', role: 'INITIATOR', status: 'ACTIVE', contractAddress: '0x1', hashlock: '0xh', timelock: 999, amount: '1.0', txHash: '0xa', chainType: 'evm', preimage: null },
+        { id: 'h2', tradeId: 't-1', role: 'COUNTERPARTY', status: 'ACTIVE', contractAddress: '0x2', hashlock: '0xh', timelock: 888, amount: '3500', txHash: '0xb', chainType: 'evm', preimage: null },
+      ];
+      const fetchFn = mockFetch({ data: { htlcs } });
       const hl = createSDK(fetchFn);
 
-      const result = await hl.getHTLCStatus('t-1');
-      expect(result?.status).toBe('BOTH_LOCKED');
-      expect(result?.initiatorHTLC?.status).toBe('ACTIVE');
-      expect(result?.counterpartyHTLC?.status).toBe('ACTIVE');
+      const result = await hl.getHTLCs('t-1');
+
+      expect(Array.isArray(result)).toBe(true);
+      expect(result).toHaveLength(2);
+      expect(result[0].role).toBe('INITIATOR');
+      expect(result[1].role).toBe('COUNTERPARTY');
+      const body = JSON.parse(fetchFn.mock.calls[0][1].body);
+      expect(body.query).toContain('htlcs(tradeId');
+      expect(body.query).not.toContain('initiatorHTLC');
+      expect(body.variables.tradeId).toBe('t-1');
     });
 
-    it('should return null for unknown trade', async () => {
-      const fetchFn = mockFetch({ data: { htlcStatus: null } });
+    it('returns an empty array for an unknown trade (clean not-found signal)', async () => {
+      const fetchFn = mockFetch({ data: { htlcs: [] } });
       const hl = createSDK(fetchFn);
 
-      const result = await hl.getHTLCStatus('unknown');
-      expect(result).toBeNull();
+      const result = await hl.getHTLCs('unknown-trade-id');
+      expect(result).toEqual([]);
     });
   });
 

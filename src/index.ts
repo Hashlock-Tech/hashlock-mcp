@@ -84,12 +84,21 @@ server.tool(
 
 server.tool(
   'get_htlc',
-  'Real-time trade observability — settlement status, timelock countdown, preimage reveal status across chains. Query live HTLC status for a trade — both initiator and counterparty legs, contract addresses, lock amounts, timelocks. USE WHEN: displaying status, deciding next action, or building audit trails. Safe to call at any time — read-only. Cross-chain: ETH, BTC, SUI.',
+  [
+    'Real-time trade observability — per-leg HTLC settlement state for a trade: which legs are locked, on which chain, with what timelock, and whether the preimage has been revealed. Read-only, safe to call at any time.',
+    '',
+    'Returns an ARRAY of HTLC legs (one entry per locked leg, typically the initiator leg and the counterparty leg). An empty array means no HTLC has been recorded for this tradeId yet (or the tradeId does not exist) — treat empty as "nothing locked", not an error.',
+    '',
+    'USE WHEN: showing trade/settlement status to the user, deciding the next settlement action (lock / claim / refund), polling for the counterparty leg, or rebuilding state after losing context.',
+    'DO NOT USE WHEN: you need RFQ/quote status (this is settlement-leg state only) — use list_my_trades or list_open_rfqs instead.',
+    '',
+    'INTERPRETING THE RESULT (per leg): `role` = INITIATOR | COUNTERPARTY; `status` = leg lifecycle; `chainType` = evm | bitcoin | sui; `timelock` = unix expiry of that leg; `preimage` non-null on a claimed initiator leg. Both legs ACTIVE = swap can complete (claim path). Initiator leg past `timelock` with counterparty leg absent = refund path.',
+  ].join('\n'),
   {
-    tradeId: z.string().describe('Trade ID to query HTLC status for'),
+    tradeId: z.string().describe('Trade ID to query HTLC legs for. An unknown ID returns an empty array, not an error.'),
   },
   async ({ tradeId }) => {
-    const result = await hl.getHTLCStatus(tradeId);
+    const result = await hl.getHTLCs(tradeId);
     return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
   },
 );
