@@ -5,6 +5,7 @@ import { HashLock } from '@hashlock-tech/sdk';
 import { okContent } from './lib/result.js';
 import { wrapTool } from './lib/errors.js';
 import { SUPPORTED_PAIRS } from './lib/pairs.js';
+import { createIdempotencyGuard } from './lib/idempotency.js';
 
 // Default to the direct api-gateway endpoint (/graphql), NOT the browser-only
 // SSR proxy at /api/graphql. The SSR proxy reads the httpOnly `api-token`
@@ -24,6 +25,8 @@ const hl = new HashLock({
   retries: 2,
   timeout: 30_000,
 });
+
+const idempotency = createIdempotencyGuard();
 
 const server = new McpServer({
   name: 'hashlock',
@@ -50,9 +53,11 @@ server.tool(
     hashlock: z.string().optional().describe('SHA-256 hashlock (0x-prefixed hex)'),
     chainType: z.string().optional().describe('Chain type: evm, bitcoin, or sui'),
     preimage: z.string().optional().describe('Secret preimage (only for initiator)'),
+    client_request_id: z.string().optional().describe('Idempotency key. Retrying the SAME write with the SAME id within this MCP session returns the first result instead of triggering a second on-chain/backend side effect. Best-effort: not durable across MCP restarts.'),
   },
-  wrapTool(async ({ tradeId, txHash, role, timelock, hashlock, chainType, preimage }) => {
-    const result = await hl.fundHTLC({ tradeId, txHash, role, timelock, hashlock, chainType, preimage });
+  wrapTool(async ({ tradeId, txHash, role, timelock, hashlock, chainType, preimage, client_request_id }) => {
+    const result = await idempotency.remember(client_request_id, () =>
+      hl.fundHTLC({ tradeId, txHash, role, timelock, hashlock, chainType, preimage }));
     return okContent(result);
   }),
 );
@@ -74,9 +79,11 @@ server.tool(
     txHash: z.string().describe('On-chain claim transaction hash (0x-prefixed)'),
     preimage: z.string().describe('The 32-byte secret preimage (0x-prefixed hex)'),
     chainType: z.string().optional().describe('Chain type: evm, bitcoin, or sui'),
+    client_request_id: z.string().optional().describe('Idempotency key. Retrying the SAME write with the SAME id within this MCP session returns the first result instead of triggering a second on-chain/backend side effect. Best-effort: not durable across MCP restarts.'),
   },
-  wrapTool(async ({ tradeId, txHash, preimage, chainType }) => {
-    const result = await hl.claimHTLC({ tradeId, txHash, preimage, chainType });
+  wrapTool(async ({ tradeId, txHash, preimage, chainType, client_request_id }) => {
+    const result = await idempotency.remember(client_request_id, () =>
+      hl.claimHTLC({ tradeId, txHash, preimage, chainType }));
     return okContent(result);
   }),
 );
@@ -97,9 +104,11 @@ server.tool(
     tradeId: z.string().describe('Trade ID'),
     txHash: z.string().describe('On-chain refund transaction hash (0x-prefixed)'),
     chainType: z.string().optional().describe('Chain type: evm, bitcoin, or sui'),
+    client_request_id: z.string().optional().describe('Idempotency key. Retrying the SAME write with the SAME id within this MCP session returns the first result instead of triggering a second on-chain/backend side effect. Best-effort: not durable across MCP restarts.'),
   },
-  wrapTool(async ({ tradeId, txHash, chainType }) => {
-    const result = await hl.refundHTLC({ tradeId, txHash, chainType });
+  wrapTool(async ({ tradeId, txHash, chainType, client_request_id }) => {
+    const result = await idempotency.remember(client_request_id, () =>
+      hl.refundHTLC({ tradeId, txHash, chainType }));
     return okContent(result);
   }),
 );
@@ -201,13 +210,15 @@ server.tool(
     amount: z.string().describe('Amount of base token as a raw decimal string ("0.1", "1.5", "10"). Do NOT convert to wei/satoshis. Reject USD-denominated values — ask user for base-token amount instead.'),
     expiresIn: z.number().optional().describe('RFQ expiration in seconds. Default 300 (5 min). "Urgent" → 60-120. "Take your time" → 600-1800. Hard cap 86400 (24 h).'),
     isBlind: z.boolean().optional().describe('Ghost Auction mode — hides requester identity from bidders and losing counterparties. Default false. Set true on intent words: "ghost", "blind", "anonymous", "hide identity", "gizli". External brand: "Ghost Auction"; internal name retained for API/DB schema stability.'),
+    client_request_id: z.string().optional().describe('Idempotency key. Retrying the SAME write with the SAME id within this MCP session returns the first result instead of triggering a second on-chain/backend side effect. Best-effort: not durable across MCP restarts.'),
   },
-  wrapTool(async ({ baseToken, baseChain, quoteToken, quoteChain, side, amount, expiresIn, isBlind }) => {
+  wrapTool(async ({ baseToken, baseChain, quoteToken, quoteChain, side, amount, expiresIn, isBlind, client_request_id }) => {
     // TODO: SDK type def (CreateRFQInput) lags backend — baseChain/quoteChain
     // are accepted by the GraphQL `createRFQ` mutation but not yet typed in
     // @hashlock-tech/sdk@0.2.0. Cast to bypass DTS build; remove once SDK
     // bumps the input type. Tracked separately from the v2 positioning sweep.
-    const result = await hl.createRFQ({ baseToken, baseChain, quoteToken, quoteChain, side, amount, expiresIn, isBlind } as Parameters<typeof hl.createRFQ>[0]);
+    const result = await idempotency.remember(client_request_id, () =>
+      hl.createRFQ({ baseToken, baseChain, quoteToken, quoteChain, side, amount, expiresIn, isBlind } as Parameters<typeof hl.createRFQ>[0]));
     return okContent(result);
   }),
 );
@@ -245,9 +256,11 @@ server.tool(
     price: z.string().describe('Price per unit of base token in quote token terms (e.g., "3450.00")'),
     amount: z.string().describe('Amount of base token to offer'),
     expiresIn: z.number().optional().describe('Quote expiration in seconds'),
+    client_request_id: z.string().optional().describe('Idempotency key. Retrying the SAME write with the SAME id within this MCP session returns the first result instead of triggering a second on-chain/backend side effect. Best-effort: not durable across MCP restarts.'),
   },
-  wrapTool(async ({ rfqId, price, amount, expiresIn }) => {
-    const result = await hl.submitQuote({ rfqId, price, amount, expiresIn });
+  wrapTool(async ({ rfqId, price, amount, expiresIn, client_request_id }) => {
+    const result = await idempotency.remember(client_request_id, () =>
+      hl.submitQuote({ rfqId, price, amount, expiresIn }));
     return okContent(result);
   }),
 );
