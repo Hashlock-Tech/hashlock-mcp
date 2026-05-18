@@ -56,3 +56,17 @@ export function limitSatisfied(bestPrice: string, limitPrice: string, side: Side
   const cmp = compareDecimal(bestPrice, limitPrice);
   return side === 'SELL' ? cmp >= 0 : cmp <= 0;
 }
+
+/** Eligible = PENDING and amount covers the request (full-fill v1).
+ *  SELL → max price; BUY → min price. null if none. */
+export function selectBestBid(quotes: SwapQuote[], side: Side, requestedAmount: string): SwapQuote | null {
+  const eligible = quotes.filter(
+    (x) => x.status === SELECTABLE_QUOTE && compareDecimal(x.amount, requestedAmount) >= 0,
+  );
+  if (eligible.length === 0) return null;
+  return eligible.reduce((best, x) => {
+    const c = compareDecimal(x.price, best.price);
+    if (side === 'SELL') return c > 0 ? x : best;
+    return c < 0 ? x : best;
+  });
+}
