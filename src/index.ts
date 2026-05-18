@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { HashLock } from '@hashlock-tech/sdk';
+import { okContent } from './lib/result.js';
 
 // Default to the direct api-gateway endpoint (/graphql), NOT the browser-only
 // SSR proxy at /api/graphql. The SSR proxy reads the httpOnly `api-token`
@@ -43,7 +44,7 @@ server.tool(
   },
   async ({ tradeId, txHash, role, timelock, hashlock, chainType, preimage }) => {
     const result = await hl.fundHTLC({ tradeId, txHash, role, timelock, hashlock, chainType, preimage });
-    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+    return okContent(result);
   },
 );
 
@@ -60,7 +61,7 @@ server.tool(
   },
   async ({ tradeId, txHash, preimage, chainType }) => {
     const result = await hl.claimHTLC({ tradeId, txHash, preimage, chainType });
-    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+    return okContent(result);
   },
 );
 
@@ -76,7 +77,7 @@ server.tool(
   },
   async ({ tradeId, txHash, chainType }) => {
     const result = await hl.refundHTLC({ tradeId, txHash, chainType });
-    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+    return okContent(result);
   },
 );
 
@@ -99,7 +100,7 @@ server.tool(
   },
   async ({ tradeId }) => {
     const result = await hl.getHTLCs(tradeId);
-    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+    return okContent(result);
   },
 );
 
@@ -184,7 +185,7 @@ server.tool(
     // @hashlock-tech/sdk@0.2.0. Cast to bypass DTS build; remove once SDK
     // bumps the input type. Tracked separately from the v2 positioning sweep.
     const result = await hl.createRFQ({ baseToken, baseChain, quoteToken, quoteChain, side, amount, expiresIn, isBlind } as Parameters<typeof hl.createRFQ>[0]);
-    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+    return okContent(result);
   },
 );
 
@@ -201,7 +202,7 @@ server.tool(
   },
   async ({ rfqId, price, amount, expiresIn }) => {
     const result = await hl.submitQuote({ rfqId, price, amount, expiresIn });
-    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+    return okContent(result);
   },
 );
 
