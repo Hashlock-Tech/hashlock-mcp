@@ -468,6 +468,36 @@ describe('MCP Tool → SDK Integration', () => {
     });
   });
 
+  describe('homogenized tool descriptions carry routing markers', () => {
+    let source: string;
+    beforeEach(async () => {
+      const fs = await import('node:fs/promises');
+      const path = await import('node:path');
+      const url = await import('node:url');
+      const here = path.dirname(url.fileURLToPath(import.meta.url));
+      source = await fs.readFile(path.resolve(here, '..', 'index.ts'), 'utf8');
+    });
+
+    for (const tool of ['create_htlc', 'withdraw_htlc', 'refund_htlc', 'get_htlc', 'respond_rfq']) {
+      it(`${tool} description has USE WHEN and DO NOT USE WHEN`, () => {
+        expect(source).toContain('USE WHEN');
+        expect(source).toContain('DO NOT USE WHEN');
+      });
+    }
+
+    it('every non-create_rfq tool description block contains both markers', () => {
+      const useWhen = (source.match(/USE WHEN:/g) ?? []).length;
+      const dontUse = (source.match(/DO NOT USE WHEN:/g) ?? []).length;
+      expect(useWhen).toBeGreaterThanOrEqual(6);
+      expect(dontUse).toBeGreaterThanOrEqual(6);
+    });
+
+    it('does not weaken the create_rfq intent compiler', () => {
+      expect(source).toContain('INTENT → PARAMS MAPPING');
+      expect(source).toMatch(/RESTATE/);
+    });
+  });
+
   // ─── Error scenarios ───────────────────────────────────
 
   describe('error handling', () => {

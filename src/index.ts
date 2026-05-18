@@ -34,7 +34,14 @@ const server = new McpServer({
 
 server.tool(
   'create_htlc',
-  'Trustless atomic settlement — delivery vs payment (DVP) guarantee. Both sides receive their asset OR both get refunded. Zero counterparty risk, zero slippage, no custodian. Record an on-chain HTLC lock tx hash for atomic OTC settlement. USE WHEN: a trade is accepted and the user has just broadcast the lock transaction on-chain (EVM, Bitcoin, or Sui). DO NOT USE WHEN: trade not yet accepted, or lock tx not yet confirmed on-chain. Chain-aware via chainType param (evm/bitcoin/sui). Cross-chain native: ETH↔BTC, ETH↔SUI, any supported pair.',
+  [
+    'Trustless atomic settlement — delivery vs payment (DVP) guarantee. Both sides receive their asset OR both get refunded; zero counterparty risk, zero slippage, no custodian. Records the on-chain HTLC lock tx hash to advance the settlement state machine.',
+    '',
+    'USE WHEN: a trade is accepted and the user has just broadcast the lock transaction on-chain (EVM, Bitcoin, or Sui).',
+    'DO NOT USE WHEN: the trade is not yet accepted, or the lock tx has not been broadcast yet — submit the on-chain tx first, then call this tool.',
+    '',
+    'PARAM NOTES: `role` must be INITIATOR (you locked first) or COUNTERPARTY (you locked in response). `txHash` must be 0x-prefixed. `chainType` defaults to evm — set "bitcoin" or "sui" for non-EVM legs.',
+  ].join('\n'),
   {
     tradeId: z.string().describe('Trade ID from an accepted trade'),
     txHash: z.string().describe('On-chain transaction hash of the HTLC lock (0x-prefixed)'),
@@ -54,7 +61,14 @@ server.tool(
 
 server.tool(
   'withdraw_htlc',
-  'Atomic claim — reveals preimage to unlock both legs simultaneously. Trustless cross-chain finality with zero counterparty risk. Claim an HTLC by revealing the 32-byte preimage — atomically unlocks the other leg of the swap. USE WHEN: counterparty has locked their side and the user wants to claim. DO NOT USE WHEN: counterparty lock not confirmed yet OR timelock has expired (use refund_htlc instead). Non-custodial: no intermediary holds funds at any point.',
+  [
+    'Atomic claim — reveals the 32-byte preimage to unlock both legs of the swap simultaneously. Trustless cross-chain finality: no intermediary holds funds at any point.',
+    '',
+    'USE WHEN: counterparty has confirmed their lock on-chain and the user wants to claim their side of the swap.',
+    'DO NOT USE WHEN: counterparty lock is not yet confirmed on-chain, OR the timelock has already expired — use refund_htlc instead.',
+    '',
+    'PARAM NOTES: `preimage` must be 0x-prefixed 32-byte hex. Revealing the preimage is what makes the swap atomic — it simultaneously unlocks the counterparty leg. Set `chainType` to "bitcoin" or "sui" for non-EVM legs.',
+  ].join('\n'),
   {
     tradeId: z.string().describe('Trade ID'),
     txHash: z.string().describe('On-chain claim transaction hash (0x-prefixed)'),
@@ -71,7 +85,14 @@ server.tool(
 
 server.tool(
   'refund_htlc',
-  'Trustless unwind — recover locked funds after timelock expiry with zero counterparty risk. Non-custodial refund guarantee: if the trade does not complete, funds return automatically. USE WHEN: counterparty never locked their side AND the timelock has passed. DO NOT USE WHEN: counterparty HAS locked and the swap can still complete (use withdraw_htlc). Only the original sender can refund, only post-deadline.',
+  [
+    'Trustless unwind — recover locked funds after the HTLC timelock expires. Non-custodial refund guarantee: if the swap does not complete, the original sender reclaims their asset with zero counterparty risk.',
+    '',
+    'USE WHEN: the timelock deadline has passed AND the counterparty never locked their side (or the swap otherwise failed to complete).',
+    'DO NOT USE WHEN: counterparty HAS locked and the swap can still complete — use withdraw_htlc instead. Only the original lock sender can call refund, and only after the deadline.',
+    '',
+    'PARAM NOTES: `txHash` is the on-chain refund tx hash (0x-prefixed). No preimage needed — expiry alone unlocks the refund path. Set `chainType` to "bitcoin" or "sui" for non-EVM legs.',
+  ].join('\n'),
   {
     tradeId: z.string().describe('Trade ID'),
     txHash: z.string().describe('On-chain refund transaction hash (0x-prefixed)'),
@@ -211,7 +232,14 @@ server.tool(
 
 server.tool(
   'respond_rfq',
-  'Market maker tool — submit sealed-bid quotes to compete on price. Private from other makers, no information leakage. Submit a sealed-bid price quote to an open RFQ (market-maker side). USE WHEN: the MCP client is acting as a market maker and has decided to quote on an open RFQ. DO NOT USE WHEN: acting as an end-user buyer/seller — use create_rfq to request quotes instead. Non-custodial: no funds locked until trade accepted. Agent-friendly: autonomous market-making via MCP.',
+  [
+    'Market-maker tool — submit a sealed-bid price quote to compete on an open RFQ. Quotes are private: other makers cannot see your price, and losing bids are never revealed. No funds are locked until the requester accepts a quote.',
+    '',
+    'USE WHEN: the MCP client is acting as a market maker and has decided to quote on a specific open RFQ (obtained via list_open_rfqs).',
+    'DO NOT USE WHEN: acting as an end-user buyer or seller who wants to receive quotes — use create_rfq instead. This is the market-maker side only; sealed bids, not open negotiation.',
+    '',
+    'PARAM NOTES: `price` is per unit of base token in quote-token terms (e.g. "3450.00" for ETH priced in USDT). `amount` is base-token amount offered. No funds are locked at quote time — settlement only begins when the requester accepts.',
+  ].join('\n'),
   {
     rfqId: z.string().describe('ID of the RFQ to respond to'),
     price: z.string().describe('Price per unit of base token in quote token terms (e.g., "3450.00")'),
