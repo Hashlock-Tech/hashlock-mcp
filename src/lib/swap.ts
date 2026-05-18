@@ -222,3 +222,32 @@ export async function runSwapExecute(
     next: 'Settle on-chain: create_htlc -> get_htlc -> withdraw_htlc (or refund_htlc after timelock).',
   });
 }
+
+export interface SwapStatusArgs { swap_handle: string; max_wait_seconds?: number; }
+
+export async function runSwapStatus(
+  client: SwapClient, args: SwapStatusArgs, sleep: Sleep,
+): Promise<ToolContent> {
+  const rfq = await client.getRFQ(args.swap_handle);
+  if (!rfq) {
+    return okContent({ outcome: 'SWAP_NOT_FOUND', swap_handle: args.swap_handle,
+      next: 'Verify the swap_handle, or open a fresh swap with swap_quote.' });
+  }
+  const open = RFQ_OPEN_STATES.has(rfq.status);
+  const quotes = open
+    ? await pollForQuotes(client, rfq.id, rfq.side, rfq.amount, args.max_wait_seconds ?? 15, sleep)
+    : await client.getQuotes(rfq.id);
+  const best = selectBestBid(quotes, rfq.side, rfq.amount);
+  return okContent({
+    swap_handle: rfq.id,
+    status: best ? 'QUOTED' : 'OPEN',
+    rfq_status: rfq.status,
+    best_bid: bidView(best),
+    bids_seen: quotes.length,
+    still_open: open,
+    next: best
+      ? 'swap_execute with this swap_handle + your limit_price (or best_bid.quote_id).'
+      : open ? 'Still waiting on bids. Call swap_status again, or swap_cancel.'
+             : 'This swap is closed. Open a fresh one with swap_quote.',
+  });
+}

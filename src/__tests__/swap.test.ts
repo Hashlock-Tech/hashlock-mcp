@@ -297,3 +297,30 @@ describe('runSwapExecute', () => {
     expect(out.accepted_price).toBe('3400');
   });
 });
+
+import { runSwapStatus } from '../lib/swap.js';
+
+describe('runSwapStatus', () => {
+  it('reconstructs swap state from the handle alone', async () => {
+    const client = fakeClient({
+      getRFQ: async () => ({ id: 'r1', side: 'SELL', amount: '10', status: 'QUOTES_RECEIVED' }),
+      getQuotes: async () => [{ id: 'q1', rfqId: 'r1', marketMakerId: 'mm', price: '3500', amount: '10', status: 'PENDING' }],
+    });
+    const out = parse(await runSwapStatus(client, { swap_handle: 'r1' }, noSleep));
+    expect(out.swap_handle).toBe('r1');
+    expect(out.status).toBe('QUOTED');
+    expect(out.best_bid.quote_id).toBe('q1');
+    expect(out.still_open).toBe(true);
+  });
+  it('SWAP_NOT_FOUND for an unknown handle', async () => {
+    const client = fakeClient({ getRFQ: async () => null });
+    const out = parse(await runSwapStatus(client, { swap_handle: 'x' }, noSleep));
+    expect(out.outcome).toBe('SWAP_NOT_FOUND');
+  });
+  it('surfaces a terminal RFQ state with still_open false', async () => {
+    const client = fakeClient({ getRFQ: async () => ({ id: 'r1', side: 'SELL', amount: '10', status: 'EXPIRED' }), getQuotes: async () => [] });
+    const out = parse(await runSwapStatus(client, { swap_handle: 'r1' }, noSleep));
+    expect(out.still_open).toBe(false);
+    expect(out.rfq_status).toBe('EXPIRED');
+  });
+});
