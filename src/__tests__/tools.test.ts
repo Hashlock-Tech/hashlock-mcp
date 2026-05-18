@@ -442,6 +442,32 @@ describe('MCP Tool → SDK Integration', () => {
     });
   });
 
+  // ─── list_open_rfqs → listRFQs ────────────────────────
+
+  describe('list_open_rfqs (listRFQs)', () => {
+    it('requests ACTIVE rfqs with pagination', async () => {
+      const fetchFn = mockFetch({ data: { rfqs: { rfqs: [{ id: 'r1', userId: 'u1', baseToken: 'ETH', quoteToken: 'USDC', side: 'SELL', amount: '2', isBlind: false, status: 'ACTIVE', expiresAt: null, createdAt: '2026-05-18', quotesCount: 0 }], total: 1, page: 1, pageSize: 20 } } });
+      const hl = createSDK(fetchFn);
+      const result = await hl.listRFQs({ status: 'ACTIVE', page: 1, pageSize: 20 });
+      expect(result.rfqs).toHaveLength(1);
+      const body = JSON.parse(fetchFn.mock.calls[0][1].body);
+      expect(body.variables.status).toBe('ACTIVE');
+      expect(body.variables.pageSize).toBe(20);
+    });
+  });
+
+  // ─── list_my_trades → listTrades ──────────────────────
+
+  describe('list_my_trades (listTrades)', () => {
+    it('passes an optional status filter through', async () => {
+      const fetchFn = mockFetch({ data: { trades: { trades: [], total: 0 } } });
+      const hl = createSDK(fetchFn);
+      await hl.listTrades({ status: 'ACTIVE', page: 1, pageSize: 20 });
+      const body = JSON.parse(fetchFn.mock.calls[0][1].body);
+      expect(body.variables.status).toBe('ACTIVE');
+    });
+  });
+
   // ─── Error scenarios ───────────────────────────────────
 
   describe('error handling', () => {

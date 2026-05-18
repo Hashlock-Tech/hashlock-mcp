@@ -224,6 +224,47 @@ server.tool(
   }),
 );
 
+// ─── list_open_rfqs ──────────────────────────────────────────
+
+server.tool(
+  'list_open_rfqs',
+  [
+    'List currently open (ACTIVE) RFQs awaiting market-maker quotes. Read-only.',
+    '',
+    'USE WHEN: acting as a market-maker agent deciding what to quote on, or showing the user live demand. DO NOT USE WHEN: you want your own trade history (use list_my_trades).',
+    '',
+    'Returns a page of RFQs (id, baseToken, quoteToken, side, amount, isBlind, status, expiresAt). To quote, call respond_rfq with the rfqId.',
+  ].join('\n'),
+  {
+    page: z.number().optional().describe('1-based page number. Default 1.'),
+    pageSize: z.number().optional().describe('Page size, 1-100. Default 20.'),
+  },
+  wrapTool(async ({ page, pageSize }) => okContent(
+    await hl.listRFQs({ status: 'ACTIVE', page: page ?? 1, pageSize: pageSize ?? 20 }),
+  )),
+);
+
+// ─── list_my_trades ──────────────────────────────────────────
+
+server.tool(
+  'list_my_trades',
+  [
+    'List the caller\'s trades (active + historical). Read-only. Primary tool for rebuilding state after losing conversation context.',
+    '',
+    'USE WHEN: an agent restarted/lost context and must resync in-flight settlements, or showing the user their trade history. DO NOT USE WHEN: you need open market demand (use list_open_rfqs) or per-leg HTLC detail for one trade (use get_htlc).',
+    '',
+    'Optional status filter narrows the page. For settlement-leg detail on a specific trade, follow up with get_htlc(tradeId).',
+  ].join('\n'),
+  {
+    status: z.string().optional().describe('Optional trade-status filter (e.g. ACTIVE, COMPLETED). Omit for all.'),
+    page: z.number().optional().describe('1-based page number. Default 1.'),
+    pageSize: z.number().optional().describe('Page size, 1-100. Default 20.'),
+  },
+  wrapTool(async ({ status, page, pageSize }) => okContent(
+    await hl.listTrades({ status, page: page ?? 1, pageSize: pageSize ?? 20 } as Parameters<typeof hl.listTrades>[0]),
+  )),
+);
+
 // ─── Start server ────────────────────────────────────────────
 
 async function main() {
