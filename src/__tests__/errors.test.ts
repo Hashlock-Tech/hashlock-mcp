@@ -34,6 +34,30 @@ describe('classifyError', () => {
     expect(c.code).toBe('UNKNOWN');
     expect(c.is_retryable).toBe(false);
   });
+
+  // Issue 1 regression tests: bare /50\d/ and bare /network/ false-positives
+  it('does NOT classify "amount 500 invalid" as UPSTREAM — bare 50x must not match validation messages', () => {
+    const c = classifyError(new Error('amount 500 invalid'));
+    expect(c.code).toBe('VALIDATION_ERROR');
+    expect(c.is_retryable).toBe(false);
+  });
+
+  it('does NOT classify "unsupported network" as UPSTREAM — bare /network/ must not match validation phrases', () => {
+    const c = classifyError(new Error('unsupported network'));
+    expect(c.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('still classifies transient "network request failed" as UPSTREAM_RPC_ERROR (retryable)', () => {
+    const c = classifyError(new Error('network request failed'));
+    expect(c.code).toBe('UPSTREAM_RPC_ERROR');
+    expect(c.is_retryable).toBe(true);
+  });
+
+  it('still classifies "502 Bad Gateway" as UPSTREAM_RPC_ERROR (retryable) — regression guard', () => {
+    const c = classifyError(new Error('Request failed: 502 Bad Gateway'));
+    expect(c.code).toBe('UPSTREAM_RPC_ERROR');
+    expect(c.is_retryable).toBe(true);
+  });
 });
 
 describe('wrapTool', () => {
@@ -50,5 +74,13 @@ describe('wrapTool', () => {
     expect(payload.error.is_retryable).toBe(false);
     expect(typeof payload.error.recovery_hint).toBe('string');
     expect(payload.error.message).toContain('No trade found');
+  });
+
+  it('converts a non-Error throw (plain string) into a structured envelope', async () => {
+    const wrapped = wrapTool(async () => { throw 'plain string boom'; });
+    const out = await wrapped();
+    const payload = JSON.parse(out.content[0].text);
+    expect(payload.error.message).toContain('plain string boom');
+    expect(payload.error.code).toBe('UNKNOWN');
   });
 });

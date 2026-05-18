@@ -16,7 +16,7 @@ const RULES: { test: RegExp; code: ErrorCode; is_retryable: boolean; recovery_hi
     recovery_hint: 'Set a valid HASHLOCK_ACCESS_TOKEN (bearer from hashlock.markets/sign/login) and retry.' },
   { test: /429|too many requests|rate.?limit/i, code: 'RATE_LIMITED', is_retryable: true,
     recovery_hint: 'Back off and retry after a short delay.' },
-  { test: /50\d|bad gateway|gateway timeout|upstream|rpc|econnreset|fetch failed|network/i, code: 'UPSTREAM_RPC_ERROR', is_retryable: true,
+  { test: /(?:status|code|http|failed:?)\s*5\d{2}\b|\b5\d{2}\b\s*(?:internal server error|bad gateway|service unavailable|gateway timeout)|internal server error|bad gateway|service unavailable|gateway timeout|upstream|\brpc\b|econnreset|etimedout|fetch failed|network (?:error|request failed|timeout)/i, code: 'UPSTREAM_RPC_ERROR', is_retryable: true,
     recovery_hint: 'Transient upstream/RPC failure. Retry with backoff; if persistent, the backend or a chain RPC is degraded.' },
   { test: /rfq.*expire|expired.*rfq|quote.*expired/i, code: 'RFQ_EXPIRED', is_retryable: false,
     recovery_hint: 'The RFQ/quote window closed. Create a fresh RFQ with create_rfq.' },
@@ -42,6 +42,18 @@ export function classifyError(err: unknown): Classification {
   };
 }
 
+/**
+ * Converts any thrown value into a structured error envelope returned as normal
+ * tool content (via `okContent`). This deliberately does NOT set MCP `isError:true`.
+ *
+ * Design rationale: returning the envelope as structured content — rather than as
+ * an MCP protocol error — gives autonomous agents a machine-readable
+ * `{ error: { code, message, is_retryable, recovery_hint } }` payload they can
+ * branch on without parsing free-form error text. An MCP `isError:true` response
+ * would surface as an opaque protocol fault to most agent runtimes, losing the
+ * actionable classification. Do NOT add `isError:true` here; do NOT modify
+ * `result.ts` to inject it.
+ */
 export function toErrorEnvelope(err: unknown): ToolContent {
   const message = err instanceof Error ? err.message : String(err);
   const c = classifyError(err);
@@ -56,7 +68,11 @@ export function toErrorEnvelope(err: unknown): ToolContent {
   });
 }
 
-/** Wrap an MCP tool handler so thrown errors become a structured envelope. */
+/**
+ * Wrap an MCP tool handler so thrown errors become a structured envelope.
+ * Errors are returned as normal tool content (not MCP `isError:true`) — see
+ * `toErrorEnvelope` for the rationale.
+ */
 export function wrapTool<A extends unknown[]>(
   handler: (...args: A) => Promise<ToolContent>,
 ): (...args: A) => Promise<ToolContent> {
