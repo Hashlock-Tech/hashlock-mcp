@@ -298,7 +298,7 @@ describe('runSwapExecute', () => {
   });
 });
 
-import { runSwapStatus } from '../lib/swap.js';
+import { runSwapStatus, runSwapCancel } from '../lib/swap.js';
 
 describe('runSwapStatus', () => {
   it('reconstructs swap state from the handle alone', async () => {
@@ -337,5 +337,25 @@ describe('runSwapStatus', () => {
   it('a non-forbidden getRFQ error propagates (not swallowed)', async () => {
     const client = fakeClient({ getRFQ: async () => { throw new Error('network down'); } });
     await expect(runSwapStatus(client, { swap_handle: 'r1' }, noSleep)).rejects.toThrow('network down');
+  });
+});
+
+describe('runSwapCancel', () => {
+  it('cancels the RFQ and reports the resulting status', async () => {
+    let cancelled: string | undefined;
+    const client = fakeClient({ cancelRFQ: async (id: string) => { cancelled = id; return { id, status: 'CANCELLED' }; } });
+    const out = parse(await runSwapCancel(client, { swap_handle: 'r1' }, passthrough));
+    expect(cancelled).toBe('r1');
+    expect(out.swap_handle).toBe('r1');
+    expect(out.status).toBe('CANCELLED');
+  });
+  it('forbidden RFQ collapses to SWAP_NOT_FOUND (no oracle, parity with execute/status)', async () => {
+    const client = fakeClient({ cancelRFQ: async () => { throw new Error('You are not a participant of this RFQ'); } });
+    const out = parse(await runSwapCancel(client, { swap_handle: 'someone-elses' }, passthrough));
+    expect(out.outcome).toBe('SWAP_NOT_FOUND');
+  });
+  it('a non-forbidden cancelRFQ error propagates (not swallowed)', async () => {
+    const client = fakeClient({ cancelRFQ: async () => { throw new Error('network down'); } });
+    await expect(runSwapCancel(client, { swap_handle: 'r1' }, passthrough)).rejects.toThrow('network down');
   });
 });

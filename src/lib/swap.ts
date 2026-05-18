@@ -223,6 +223,32 @@ export async function runSwapExecute(
   });
 }
 
+export interface SwapCancelArgs { swap_handle: string; client_request_id?: string; }
+
+export async function runSwapCancel(
+  client: SwapClient, args: SwapCancelArgs, remember: Remember,
+): Promise<ToolContent> {
+  // Idempotency key is composed at the index.ts tool handler (Layer-1 pattern);
+  // this fn receives a pre-bound Remember.
+  let res: { id: string; status: string };
+  try {
+    res = await remember(() => client.cancelRFQ(args.swap_handle));
+  } catch (err) {
+    // Uniform not-found contract (parity with runSwapExecute/runSwapStatus): a
+    // forbidden/unauthorized RFQ (exists but caller is not a participant) must
+    // NOT be distinguishable from a non-existent one — no existence/participant
+    // oracle via swap_cancel.
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/forbidden|not a participant|unauthor|\b401\b|\b403\b/i.test(msg)) {
+      return okContent({ outcome: 'SWAP_NOT_FOUND', swap_handle: args.swap_handle,
+        next: 'Verify the swap_handle, or open a fresh swap with swap_quote.' });
+    }
+    throw err;
+  }
+  return okContent({ swap_handle: res.id, status: res.status,
+    next: 'Swap aborted. No funds were locked. Open a new swap with swap_quote when ready.' });
+}
+
 export interface SwapStatusArgs { swap_handle: string; max_wait_seconds?: number; }
 
 export async function runSwapStatus(
