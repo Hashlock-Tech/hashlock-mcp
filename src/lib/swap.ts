@@ -70,3 +70,21 @@ export function selectBestBid(quotes: SwapQuote[], side: Side, requestedAmount: 
     return c < 0 ? x : best;
   });
 }
+
+/** Poll getQuotes until an eligible bid exists or the bounded window elapses.
+ *  Window clamped to [0, 25]s (kept under the 30s SDK client timeout).
+ *  Clock injected (sleep) so tests are deterministic and instant. */
+export async function pollForQuotes(
+  client: SwapClient, rfqId: string, side: Side, requestedAmount: string,
+  maxWaitSeconds: number, sleep: Sleep,
+): Promise<SwapQuote[]> {
+  const capped = Math.max(0, Math.min(MAX_WAIT_CAP_S, Math.floor(maxWaitSeconds || 0)));
+  const iterations = Math.max(1, Math.ceil((capped * 1000) / POLL_INTERVAL_MS) + 1);
+  let quotes: SwapQuote[] = [];
+  for (let i = 0; i < iterations; i++) {
+    quotes = await client.getQuotes(rfqId);
+    if (selectBestBid(quotes, side, requestedAmount)) return quotes;
+    if (i < iterations - 1) await sleep(POLL_INTERVAL_MS);
+  }
+  return quotes;
+}

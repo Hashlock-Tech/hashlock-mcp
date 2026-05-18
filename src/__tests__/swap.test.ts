@@ -67,3 +67,46 @@ describe('selectBestBid', () => {
     expect(selectBestBid([q({ amount: '1' })], 'SELL', '10')).toBeNull();
   });
 });
+
+import { pollForQuotes, type SwapClient } from '../lib/swap.js';
+
+function fakeClient(over: Partial<SwapClient>): SwapClient {
+  return {
+    createRFQ: async () => ({ id: 'r1', status: 'ACTIVE' }),
+    getRFQ: async () => ({ id: 'r1', side: 'SELL', amount: '10', status: 'ACTIVE' }),
+    getQuotes: async () => [],
+    acceptQuote: async () => ({ id: 'q', rfqId: 'r1', status: 'ACCEPTED', trade: { id: 't1', status: 'PROPOSED' } }),
+    cancelRFQ: async () => ({ id: 'r1', status: 'CANCELLED' }),
+    ...over,
+  };
+}
+const noSleep = async () => {};
+
+describe('pollForQuotes', () => {
+  it('early-returns as soon as an eligible bid exists', async () => {
+    let calls = 0;
+    const client = fakeClient({
+      getQuotes: async () => {
+        calls += 1;
+        return calls < 2 ? [] : [{ id: 'q1', rfqId: 'r1', marketMakerId: 'mm', price: '3400', amount: '10', status: 'PENDING' }];
+      },
+    });
+    const quotes = await pollForQuotes(client, 'r1', 'SELL', '10', 20, noSleep);
+    expect(quotes).toHaveLength(1);
+    expect(calls).toBe(2);
+  });
+  it('stops after the bounded window when no eligible bid arrives', async () => {
+    let calls = 0;
+    const client = fakeClient({ getQuotes: async () => { calls += 1; return []; } });
+    const quotes = await pollForQuotes(client, 'r1', 'SELL', '10', 20, noSleep);
+    expect(quotes).toEqual([]);
+    expect(calls).toBeGreaterThanOrEqual(2);
+  });
+  it('caps wait at 25s (negative/huge inputs clamped)', async () => {
+    let calls = 0;
+    const client = fakeClient({ getQuotes: async () => { calls += 1; return []; } });
+    await pollForQuotes(client, 'r1', 'SELL', '10', 9999, noSleep);
+    const capped = await (async () => calls)();
+    expect(calls).toBeLessThanOrEqual(11);
+  });
+});
