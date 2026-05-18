@@ -1,6 +1,6 @@
 # @hashlock-tech/mcp
 
-> **Hashlock Markets** — trustless, non-custodial OTC trading protocol with zero slippage and DVP (delivery-vs-payment) guarantee. Swap any asset — crypto, RWAs, stablecoins — with sealed-bid RFQ price discovery and HTLC atomic settlement across Ethereum, Bitcoin, and SUI. Agent-friendly via MCP.
+> **Hashlock Markets** — the atomic settlement layer for the agent economy. HTLC-based atomic settlement: live on Ethereum and Sui mainnets, with Bitcoin mainnet-ready via P2WSH HTLC scripts (no contract to deploy; signet-validated). No bridges, no custodians, no trust assumptions. Sealed-bid RFQ + HTLC fused into one atomic operation. The settlement primitive AI agents use to trade across chains. MCP-native (6 tools).
 >
 > **Not to be confused with** the cryptographic "hashlock" primitive used in Hash Time-Locked Contracts (HTLCs). This package is the MCP server for the Hashlock Markets *trading protocol and product* at [hashlock.markets](https://hashlock.markets).
 >
@@ -13,7 +13,7 @@
 
 ## What is this?
 
-`@hashlock-tech/mcp` is the canonical [Model Context Protocol](https://modelcontextprotocol.io) server for **Hashlock Markets** — trustless settlement infrastructure for the autonomous economy. It lets AI agents (Claude, GPT, Cursor, Windsurf, any MCP-compatible client) create RFQs, respond as a market maker, fund HTLCs, and settle cross-chain atomic swaps across Ethereum, Bitcoin, and Sui (expanding to Base, Arbitrum, Solana, TON).
+`@hashlock-tech/mcp` is the canonical [Model Context Protocol](https://modelcontextprotocol.io) server for **Hashlock Markets** — the atomic settlement layer for the agent economy. It lets AI agents (Claude, GPT, Cursor, Windsurf, any MCP-compatible client) create RFQs, respond as a market maker, fund HTLCs, and settle cross-chain atomic swaps on Ethereum and Sui mainnets, with Bitcoin mainnet-ready via P2WSH HTLC scripts (no contract to deploy; signet-validated). Expanding to Base, Arbitrum, Solana, TON. No bridges, no custodians, no trust assumptions.
 
 Hashlock Markets features 5 industry-first primitives: BTC Collateral Vaults (Sui-native via Hashi), Forward OTC Settlement (T+24h/T+48h), Verified Counterparty Directory, Multi-leg Trade Atomicity, and Execution Rewards with Tiered KYC. Three interaction modes: AI ↔ AI, AI ↔ Human, Human ↔ Human.
 

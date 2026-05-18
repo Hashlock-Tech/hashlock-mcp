@@ -1,0 +1,35 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "name": "io.github.Hashlock-Tech/hashlock",
+  "version": "0.1.12",
+  "description": "Trustless cross-chain OTC settlement for AI agents. Sealed-bid RFQ + HTLC atomic swap.",
+  "vendor": "Hashlock-Tech",
+  "sourceUrl": "https://github.com/Hashlock-Tech/hashlock-mcp",
+  "homepage": "https://hashlock.markets",
+  "license": "MIT",
+  "runtime": "node",
+  "transport": ["stdio"],
+  "features": {
+    "tools": true,
+    "resources": false,
+    "prompts": false
+  },
+  "tools": [
+    { "name": "create_rfq", "description": "Create a Request for Quote to buy or sell crypto" },
+    { "name": "respond_rfq", "description": "Submit a price quote for an open RFQ" },
+    { "name": "create_htlc", "description": "Create and fund an HTLC for atomic OTC settlement" },
+    { "name": "withdraw_htlc", "description": "Claim an HTLC by revealing the preimage" },
+    { "name": "refund_htlc", "description": "Refund an HTLC after timelock expiry" },
+    { "name": "get_htlc", "description": "Query HTLC status for a trade" }
+  ],
+  "installation": {
+    "npm": "@hashlock-tech/mcp",
+    "command": "npx -y @hashlock-tech/mcp",
+    "env": {
+      "HASHLOCK_ACCESS_TOKEN": {
+        "description": "7-day SIWE JWT from hashlock.markets/sign/login",
+        "required": true
+      }
+    }
+  }
+}

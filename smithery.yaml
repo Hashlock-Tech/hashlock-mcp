@@ -1,4 +1,4 @@
-# Smithery.ai config for HashLock OTC MCP server.
+# Smithery.ai config for the Hashlock MCP server.
 # Published: https://www.npmjs.com/package/@hashlock-tech/mcp
 # Source:    https://github.com/Hashlock-Tech/hashlock-mcp
 # Registry:  io.github.Hashlock-Tech/hashlock
@@ -14,7 +14,7 @@ config:
   properties:
     HASHLOCK_ACCESS_TOKEN:
       type: "string"
-      title: "HashLock access token"
+      title: "Hashlock access token"
       description: >-
         Bearer token obtained from https://hashlock.markets/sign/login.
         Issued via SIWE (Sign-In with Ethereum); valid for 7 days.
@@ -22,30 +22,38 @@ config:
     HASHLOCK_ENDPOINT:
       type: "string"
       title: "GraphQL endpoint"
-      description: "Override the HashLock GraphQL endpoint. Default is production."
+      description: "Override the Hashlock GraphQL endpoint. Default is production."
       default: "https://hashlock.markets/api/graphql"
 
 metadata:
   name: "Hashlock Markets"
   description: >-
-    Trustless cross-chain OTC settlement for AI agents. Sealed-bid RFQ +
-    HTLC atomic swap. Zero slippage, zero counterparty risk, non-custodial.
-    DVP guarantee. ETH/BTC/SUI. Agent-friendly MCP interface for autonomous
-    trading. 6 tools: create_rfq, respond_rfq, create_htlc, withdraw_htlc,
-    refund_htlc, get_htlc.
+    Atomic settlement layer for the agent economy. Sealed-bid RFQ +
+    HTLC atomic swap, fused into one operation. Two parties on different
+    chains — autonomous agents or institutional OTC desks — exchange
+    value without trusting each other or a third party. Zero slippage,
+    zero counterparty risk, non-custodial. BIS DvP-1 by construction.
+    ETH/BTC/SUI. MCP-native, retry-safe, signed receipts. 6 tools:
+    create_rfq, respond_rfq, create_htlc, withdraw_htlc, refund_htlc,
+    get_htlc.
   homepage: "https://hashlock.markets"
   repository: "https://github.com/Hashlock-Tech/hashlock-mcp"
   license: "MIT"
   categories:
     - "finance"
     - "defi"
+    - "agents"
     - "trading"
   tags:
+    - "agent-economy"
+    - "agent-native"
+    - "atomic-settlement"
     - "htlc"
     - "atomic-swap"
-    - "otc"
+    - "cross-chain"
+    - "rfq"
+    - "dvp"
     - "ethereum"
     - "bitcoin"
     - "sui"
-    - "cross-chain"
-    - "rfq"
+    - "otc"

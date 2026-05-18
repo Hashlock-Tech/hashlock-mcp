@@ -2,7 +2,7 @@
 
 ## What is this?
 
-HashLock MCP is a Model Context Protocol server that gives AI agents access to institutional OTC crypto trading with atomic settlement (HTLCs). You can create trades, lock assets, and settle trustlessly across Ethereum and Bitcoin.
+HashLock MCP is a Model Context Protocol server that gives AI agents access to cross-chain atomic settlement (HTLCs). You can create trades, lock assets, and settle trustlessly across Ethereum and Bitcoin.
 
 ## Quick Install
 

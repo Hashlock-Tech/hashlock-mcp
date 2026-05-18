@@ -170,7 +170,11 @@ server.tool(
     isBlind: z.boolean().optional().describe('Ghost Auction mode — hides requester identity from bidders and losing counterparties. Default false. Set true on intent words: "ghost", "blind", "anonymous", "hide identity", "gizli". External brand: "Ghost Auction"; internal name retained for API/DB schema stability.'),
   },
   async ({ baseToken, baseChain, quoteToken, quoteChain, side, amount, expiresIn, isBlind }) => {
-    const result = await hl.createRFQ({ baseToken, baseChain, quoteToken, quoteChain, side, amount, expiresIn, isBlind });
+    // TODO: SDK type def (CreateRFQInput) lags backend — baseChain/quoteChain
+    // are accepted by the GraphQL `createRFQ` mutation but not yet typed in
+    // @hashlock-tech/sdk@0.2.0. Cast to bypass DTS build; remove once SDK
+    // bumps the input type. Tracked separately from the v2 positioning sweep.
+    const result = await hl.createRFQ({ baseToken, baseChain, quoteToken, quoteChain, side, amount, expiresIn, isBlind } as Parameters<typeof hl.createRFQ>[0]);
     return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
   },
 );
