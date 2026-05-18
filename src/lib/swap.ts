@@ -132,3 +132,60 @@ export async function runSwapQuote(
       : 'No bids yet. Call swap_status to keep waiting, or swap_cancel to abort.',
   });
 }
+
+export interface SwapExecuteArgs {
+  swap_handle: string; limit_price?: string; quote_id?: string; client_request_id?: string;
+}
+
+export async function runSwapExecute(
+  client: SwapClient, args: SwapExecuteArgs, remember: Remember,
+): Promise<ToolContent> {
+  const rfq = await client.getRFQ(args.swap_handle);
+  if (!rfq) {
+    return okContent({ outcome: 'SWAP_NOT_FOUND', swap_handle: args.swap_handle,
+      next: 'Verify the swap_handle, or open a fresh swap with swap_quote.' });
+  }
+  if (!RFQ_OPEN_STATES.has(rfq.status)) {
+    return okContent({ outcome: 'SWAP_NOT_OPEN', swap_handle: args.swap_handle, rfq_status: rfq.status,
+      next: 'This swap can no longer be executed. Open a fresh swap with swap_quote.' });
+  }
+  const quotes = await client.getQuotes(args.swap_handle);
+
+  let chosen: SwapQuote | null;
+  if (args.quote_id) {
+    chosen = quotes.find(
+      (x) => x.id === args.quote_id && x.status === SELECTABLE_QUOTE
+        && compareDecimal(x.amount, rfq.amount) >= 0,
+    ) ?? null;
+    if (!chosen) {
+      return okContent({ outcome: 'QUOTE_NOT_AVAILABLE', swap_handle: args.swap_handle, quote_id: args.quote_id,
+        next: 'That quote expired or was outbid. Re-check live bids with swap_status.' });
+    }
+  } else if (args.limit_price !== undefined) {
+    const best = selectBestBid(quotes, rfq.side, rfq.amount);
+    if (!best) {
+      return okContent({ outcome: 'NO_ACCEPTABLE_FILL', swap_handle: args.swap_handle, best_price: null,
+        limit_price: args.limit_price, side: rfq.side, bids_seen: quotes.length,
+        next: 'No eligible bids yet. swap_status to wait, or swap_cancel.' });
+    }
+    if (!limitSatisfied(best.price, args.limit_price, rfq.side)) {
+      return okContent({ outcome: 'NO_ACCEPTABLE_FILL', swap_handle: args.swap_handle, best_price: best.price,
+        limit_price: args.limit_price, side: rfq.side, bids_seen: quotes.length,
+        next: 'Best bid does not meet your limit. swap_status to wait for better, or swap_cancel.' });
+    }
+    chosen = best;
+  } else {
+    return okContent({ outcome: 'CONFIRMATION_REQUIRED', swap_handle: args.swap_handle,
+      next: 'Real funds. Re-call swap_execute with EITHER limit_price (auto-takes best bid iff it meets your bound) OR quote_id (from swap_status best_bid.quote_id) to confirm the exact price.' });
+  }
+
+  const accept = await remember(() => client.acceptQuote(chosen!.id));
+  return okContent({
+    trade_id: accept.trade?.id ?? null,
+    rfq_id: accept.rfqId,
+    accepted_price: chosen.price,
+    accepted_amount: chosen.amount,
+    status: accept.status,
+    next: 'Settle on-chain: create_htlc -> get_htlc -> withdraw_htlc (or refund_htlc after timelock).',
+  });
+}

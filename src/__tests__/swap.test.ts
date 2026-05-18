@@ -156,3 +156,62 @@ describe('runSwapQuote', () => {
     expect(createInput.isBlind).toBe(false);
   });
 });
+
+import { runSwapExecute } from '../lib/swap.js';
+
+const SELL_RFQ = { id: 'r1', side: 'SELL' as const, amount: '10', status: 'QUOTES_RECEIVED' };
+const pendingBids = [
+  { id: 'qa', rfqId: 'r1', marketMakerId: 'mm', price: '3400', amount: '10', status: 'PENDING' },
+  { id: 'qb', rfqId: 'r1', marketMakerId: 'mm', price: '3500', amount: '10', status: 'PENDING' },
+];
+
+describe('runSwapExecute', () => {
+  it('CONFIRMATION_REQUIRED when neither quote_id nor limit_price given', async () => {
+    const client = fakeClient({ getRFQ: async () => SELL_RFQ, getQuotes: async () => pendingBids });
+    const out = parse(await runSwapExecute(client, { swap_handle: 'r1' }, passthrough));
+    expect(out.outcome).toBe('CONFIRMATION_REQUIRED');
+  });
+  it('accepts the best bid when the sealed limit is satisfied (SELL floor)', async () => {
+    let accepted: string | undefined;
+    const client = fakeClient({
+      getRFQ: async () => SELL_RFQ, getQuotes: async () => pendingBids,
+      acceptQuote: async (id: string) => { accepted = id; return { id, rfqId: 'r1', status: 'ACCEPTED', trade: { id: 't9', status: 'PROPOSED' } }; },
+    });
+    const out = parse(await runSwapExecute(client, { swap_handle: 'r1', limit_price: '3450' }, passthrough));
+    expect(accepted).toBe('qb');
+    expect(out.trade_id).toBe('t9');
+    expect(out.accepted_price).toBe('3500');
+    expect(out.accepted_amount).toBe('10');
+  });
+  it('NO_ACCEPTABLE_FILL when best bid misses the SELL floor', async () => {
+    const client = fakeClient({ getRFQ: async () => SELL_RFQ, getQuotes: async () => pendingBids });
+    const out = parse(await runSwapExecute(client, { swap_handle: 'r1', limit_price: '9999' }, passthrough));
+    expect(out.outcome).toBe('NO_ACCEPTABLE_FILL');
+    expect(out.best_price).toBe('3500');
+  });
+  it('explicit quote_id path accepts exactly that quote', async () => {
+    let accepted: string | undefined;
+    const client = fakeClient({
+      getRFQ: async () => SELL_RFQ, getQuotes: async () => pendingBids,
+      acceptQuote: async (id: string) => { accepted = id; return { id, rfqId: 'r1', status: 'ACCEPTED', trade: { id: 't1', status: 'PROPOSED' } }; },
+    });
+    await runSwapExecute(client, { swap_handle: 'r1', quote_id: 'qa' }, passthrough);
+    expect(accepted).toBe('qa');
+  });
+  it('QUOTE_NOT_AVAILABLE when the given quote_id is not an eligible bid', async () => {
+    const client = fakeClient({ getRFQ: async () => SELL_RFQ, getQuotes: async () => pendingBids });
+    const out = parse(await runSwapExecute(client, { swap_handle: 'r1', quote_id: 'ghost' }, passthrough));
+    expect(out.outcome).toBe('QUOTE_NOT_AVAILABLE');
+  });
+  it('SWAP_NOT_OPEN when the RFQ is in a terminal state', async () => {
+    const client = fakeClient({ getRFQ: async () => ({ ...SELL_RFQ, status: 'CANCELLED' }) });
+    const out = parse(await runSwapExecute(client, { swap_handle: 'r1', limit_price: '1' }, passthrough));
+    expect(out.outcome).toBe('SWAP_NOT_OPEN');
+    expect(out.rfq_status).toBe('CANCELLED');
+  });
+  it('SWAP_NOT_FOUND when the handle is unknown', async () => {
+    const client = fakeClient({ getRFQ: async () => null });
+    const out = parse(await runSwapExecute(client, { swap_handle: 'nope', limit_price: '1' }, passthrough));
+    expect(out.outcome).toBe('SWAP_NOT_FOUND');
+  });
+});
