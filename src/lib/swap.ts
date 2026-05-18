@@ -1,3 +1,5 @@
+import { okContent, type ToolContent } from './result.js';
+
 export type Side = 'BUY' | 'SELL';
 
 export interface SwapQuote {
@@ -87,4 +89,46 @@ export async function pollForQuotes(
     if (i < iterations - 1) await sleep(POLL_INTERVAL_MS);
   }
   return quotes;
+}
+
+export interface SwapQuoteArgs {
+  side: Side; baseToken: string; baseChain?: string;
+  quoteToken: string; quoteChain?: string; amount: string;
+  limit_price?: string; private?: boolean; expiresIn?: number;
+  max_wait_seconds?: number; client_request_id?: string;
+}
+export interface SwapDeps { sleep: Sleep; remember: Remember; }
+
+function bidView(q: SwapQuote | null) {
+  return q ? { quote_id: q.id, price: q.price, amount: q.amount, expires_at: q.expiresAt ?? null } : null;
+}
+
+export async function runSwapQuote(
+  client: SwapClient, args: SwapQuoteArgs, deps: SwapDeps,
+): Promise<ToolContent> {
+  // Mirror create_rfq EXACTLY: same input object incl. baseChain/quoteChain.
+  // limit_price is deliberately NOT part of this object (sealed reservation).
+  const rfqInput = {
+    baseToken: args.baseToken, baseChain: args.baseChain,
+    quoteToken: args.quoteToken, quoteChain: args.quoteChain,
+    side: args.side, amount: args.amount,
+    expiresIn: args.expiresIn ?? 300,
+    isBlind: args.private ?? true,
+  };
+  const rfq = await deps.remember(() => client.createRFQ(rfqInput));
+  const quotes = await pollForQuotes(
+    client, rfq.id, args.side, args.amount, args.max_wait_seconds ?? 20, deps.sleep,
+  );
+  const best = selectBestBid(quotes, args.side, args.amount);
+  return okContent({
+    swap_handle: rfq.id,
+    status: best ? 'QUOTED' : 'OPEN',
+    best_bid: bidView(best),
+    bids_seen: quotes.length,
+    still_open: RFQ_OPEN_STATES.has(rfq.status),
+    limit_price: args.limit_price ?? null,
+    next: best
+      ? 'swap_execute with this swap_handle + your limit_price (or best_bid.quote_id) to take it; or swap_status to let competition build; or swap_cancel to abort.'
+      : 'No bids yet. Call swap_status to keep waiting, or swap_cancel to abort.',
+  });
 }

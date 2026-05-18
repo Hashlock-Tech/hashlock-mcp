@@ -68,7 +68,8 @@ describe('selectBestBid', () => {
   });
 });
 
-import { pollForQuotes, type SwapClient } from '../lib/swap.js';
+import { pollForQuotes, type SwapClient, runSwapQuote } from '../lib/swap.js';
+import type { Remember } from '../lib/swap.js';
 
 function fakeClient(over: Partial<SwapClient>): SwapClient {
   return {
@@ -108,5 +109,50 @@ describe('pollForQuotes', () => {
     await pollForQuotes(client, 'r1', 'SELL', '10', 9999, noSleep);
     const capped = await (async () => calls)();
     expect(calls).toBeLessThanOrEqual(11);
+  });
+});
+
+const passthrough: Remember = (op) => op();
+
+function parse(content: { content: { text: string }[] }) {
+  return JSON.parse(content.content[0].text);
+}
+
+describe('runSwapQuote', () => {
+  it('opens RFQ with isBlind defaulting true and returns a QUOTED handle when a bid arrives', async () => {
+    let createInput: any;
+    const client = fakeClient({
+      createRFQ: async (i: unknown) => { createInput = i; return { id: 'rfq-9', status: 'ACTIVE' }; },
+      getQuotes: async () => [{ id: 'q1', rfqId: 'rfq-9', marketMakerId: 'mm', price: '3500', amount: '2', status: 'PENDING' }],
+    });
+    const out = parse(await runSwapQuote(client, {
+      side: 'SELL', baseToken: 'ETH', quoteToken: 'USDT', amount: '2', limit_price: '3400',
+    }, { sleep: noSleep, remember: passthrough }));
+
+    expect(createInput.isBlind).toBe(true);
+    expect('limit_price' in createInput).toBe(false);
+    expect(out.swap_handle).toBe('rfq-9');
+    expect(out.status).toBe('QUOTED');
+    expect(out.best_bid.quote_id).toBe('q1');
+    expect(out.best_bid.price).toBe('3500');
+    expect(out.bids_seen).toBe(1);
+    expect(out.limit_price).toBe('3400');
+  });
+
+  it('returns an OPEN handle with null best_bid when no bid arrives in the window', async () => {
+    const client = fakeClient({ createRFQ: async () => ({ id: 'rfq-x', status: 'ACTIVE' }), getQuotes: async () => [] });
+    const out = parse(await runSwapQuote(client, { side: 'BUY', baseToken: 'ETH', quoteToken: 'USDT', amount: '1' },
+      { sleep: noSleep, remember: passthrough }));
+    expect(out.status).toBe('OPEN');
+    expect(out.best_bid).toBeNull();
+    expect(out.still_open).toBe(true);
+  });
+
+  it('honors private:false override', async () => {
+    let createInput: any;
+    const client = fakeClient({ createRFQ: async (i: unknown) => { createInput = i; return { id: 'r', status: 'ACTIVE' }; }, getQuotes: async () => [] });
+    await runSwapQuote(client, { side: 'SELL', baseToken: 'ETH', quoteToken: 'USDT', amount: '1', private: false },
+      { sleep: noSleep, remember: passthrough });
+    expect(createInput.isBlind).toBe(false);
   });
 });
