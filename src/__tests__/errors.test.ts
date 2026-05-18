@@ -84,3 +84,18 @@ describe('wrapTool', () => {
     expect(payload.error.code).toBe('UNKNOWN');
   });
 });
+
+describe('non-Error object throwables', () => {
+  it('classifyError extracts .message from a plain object (not [object Object])', () => {
+    const c = classifyError({ message: 'No trade found for tradeId q' });
+    expect(c.code).toBe('TRADE_NOT_FOUND');
+  });
+
+  it('wrapTool preserves .message from a thrown plain object', async () => {
+    const wrapped = wrapTool(async () => { throw { message: 'custom object failure' }; });
+    const out = await wrapped();
+    const payload = JSON.parse(out.content[0].text);
+    expect(payload.error.message).toBe('custom object failure');
+    expect(payload.error.code).toBe('UNKNOWN');
+  });
+});

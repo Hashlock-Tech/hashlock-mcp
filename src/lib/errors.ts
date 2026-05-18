@@ -28,8 +28,17 @@ const RULES: { test: RegExp; code: ErrorCode; is_retryable: boolean; recovery_hi
     recovery_hint: 'Fix the offending argument and retry. Check token/chain are in list_supported_pairs.' },
 ];
 
+function extractMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (err && typeof err === 'object' && 'message' in err
+      && typeof (err as { message: unknown }).message === 'string') {
+    return (err as { message: string }).message;
+  }
+  return String(err);
+}
+
 export function classifyError(err: unknown): Classification {
-  const message = err instanceof Error ? err.message : String(err);
+  const message = extractMessage(err);
   for (const r of RULES) {
     if (r.test.test(message)) {
       return { code: r.code, is_retryable: r.is_retryable, recovery_hint: r.recovery_hint };
@@ -55,7 +64,7 @@ export function classifyError(err: unknown): Classification {
  * `result.ts` to inject it.
  */
 export function toErrorEnvelope(err: unknown): ToolContent {
-  const message = err instanceof Error ? err.message : String(err);
+  const message = extractMessage(err);
   const c = classifyError(err);
   return okContent({
     error: {

@@ -5,7 +5,7 @@ import { HashLock } from '@hashlock-tech/sdk';
 import { okContent } from './lib/result.js';
 import { wrapTool } from './lib/errors.js';
 import { SUPPORTED_PAIRS } from './lib/pairs.js';
-import { createIdempotencyGuard } from './lib/idempotency.js';
+import { createIdempotencyGuard, idempotencyKey } from './lib/idempotency.js';
 
 // Default to the direct api-gateway endpoint (/graphql), NOT the browser-only
 // SSR proxy at /api/graphql. The SSR proxy reads the httpOnly `api-token`
@@ -56,8 +56,9 @@ server.tool(
     client_request_id: z.string().optional().describe('Idempotency key. Retrying the SAME write with the SAME id within this MCP session returns the first result instead of triggering a second on-chain/backend side effect. Best-effort: not durable across MCP restarts.'),
   },
   wrapTool(async ({ tradeId, txHash, role, timelock, hashlock, chainType, preimage, client_request_id }) => {
-    const result = await idempotency.remember(client_request_id, () =>
-      hl.fundHTLC({ tradeId, txHash, role, timelock, hashlock, chainType, preimage }));
+    const input = { tradeId, txHash, role, timelock, hashlock, chainType, preimage };
+    const result = await idempotency.remember(idempotencyKey('create_htlc', client_request_id, input), () =>
+      hl.fundHTLC(input));
     return okContent(result);
   }),
 );
@@ -82,8 +83,9 @@ server.tool(
     client_request_id: z.string().optional().describe('Idempotency key. Retrying the SAME write with the SAME id within this MCP session returns the first result instead of triggering a second on-chain/backend side effect. Best-effort: not durable across MCP restarts.'),
   },
   wrapTool(async ({ tradeId, txHash, preimage, chainType, client_request_id }) => {
-    const result = await idempotency.remember(client_request_id, () =>
-      hl.claimHTLC({ tradeId, txHash, preimage, chainType }));
+    const input = { tradeId, txHash, preimage, chainType };
+    const result = await idempotency.remember(idempotencyKey('withdraw_htlc', client_request_id, input), () =>
+      hl.claimHTLC(input));
     return okContent(result);
   }),
 );
@@ -107,8 +109,9 @@ server.tool(
     client_request_id: z.string().optional().describe('Idempotency key. Retrying the SAME write with the SAME id within this MCP session returns the first result instead of triggering a second on-chain/backend side effect. Best-effort: not durable across MCP restarts.'),
   },
   wrapTool(async ({ tradeId, txHash, chainType, client_request_id }) => {
-    const result = await idempotency.remember(client_request_id, () =>
-      hl.refundHTLC({ tradeId, txHash, chainType }));
+    const input = { tradeId, txHash, chainType };
+    const result = await idempotency.remember(idempotencyKey('refund_htlc', client_request_id, input), () =>
+      hl.refundHTLC(input));
     return okContent(result);
   }),
 );
@@ -215,10 +218,11 @@ server.tool(
   wrapTool(async ({ baseToken, baseChain, quoteToken, quoteChain, side, amount, expiresIn, isBlind, client_request_id }) => {
     // TODO: SDK type def (CreateRFQInput) lags backend — baseChain/quoteChain
     // are accepted by the GraphQL `createRFQ` mutation but not yet typed in
-    // @hashlock-tech/sdk@0.2.0. Cast to bypass DTS build; remove once SDK
+    // @hashlock-tech/sdk@0.1.4. Cast to bypass DTS build; remove once SDK
     // bumps the input type. Tracked separately from the v2 positioning sweep.
-    const result = await idempotency.remember(client_request_id, () =>
-      hl.createRFQ({ baseToken, baseChain, quoteToken, quoteChain, side, amount, expiresIn, isBlind } as Parameters<typeof hl.createRFQ>[0]));
+    const input = { baseToken, baseChain, quoteToken, quoteChain, side, amount, expiresIn, isBlind } as Parameters<typeof hl.createRFQ>[0];
+    const result = await idempotency.remember(idempotencyKey('create_rfq', client_request_id, input), () =>
+      hl.createRFQ(input));
     return okContent(result);
   }),
 );
@@ -259,8 +263,9 @@ server.tool(
     client_request_id: z.string().optional().describe('Idempotency key. Retrying the SAME write with the SAME id within this MCP session returns the first result instead of triggering a second on-chain/backend side effect. Best-effort: not durable across MCP restarts.'),
   },
   wrapTool(async ({ rfqId, price, amount, expiresIn, client_request_id }) => {
-    const result = await idempotency.remember(client_request_id, () =>
-      hl.submitQuote({ rfqId, price, amount, expiresIn }));
+    const input = { rfqId, price, amount, expiresIn };
+    const result = await idempotency.remember(idempotencyKey('respond_rfq', client_request_id, input), () =>
+      hl.submitQuote(input));
     return okContent(result);
   }),
 );
