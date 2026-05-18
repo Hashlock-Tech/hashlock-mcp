@@ -112,31 +112,39 @@ describe('MCP Tool → SDK Integration', () => {
     });
   });
 
-  // ─── get_htlc → getHTLCStatus ─────────────────────────
+  // ─── get_htlc → getHTLCs ───────────────────────────────────────────
+  // get_htlc MUST use getHTLCs (queries `htlcs`, which the backend serves),
+  // NOT getHTLCStatus (queries htlcStatus.initiatorHTLC — a field the flat
+  // HTLCStatusResult type does not have; rejected at GraphQL validation for
+  // EVERY input). This test pins the working query shape.
 
-  describe('get_htlc (getHTLCStatus)', () => {
-    it('should return both initiator and counterparty HTLCs', async () => {
-      const htlcStatus = {
-        tradeId: 't-1',
-        status: 'BOTH_LOCKED',
-        initiatorHTLC: { id: 'h1', tradeId: 't-1', role: 'INITIATOR', status: 'ACTIVE', contractAddress: '0x1', hashlock: '0xh', timelock: 999, amount: '1.0', txHash: '0xa', chainType: 'evm' },
-        counterpartyHTLC: { id: 'h2', tradeId: 't-1', role: 'COUNTERPARTY', status: 'ACTIVE', contractAddress: '0x2', hashlock: '0xh', timelock: 888, amount: '3500', txHash: '0xb', chainType: 'evm' },
-      };
-      const fetchFn = mockFetch({ data: { htlcStatus } });
+  describe('get_htlc (getHTLCs)', () => {
+    it('returns the per-leg HTLC array for a known trade', async () => {
+      const htlcs = [
+        { id: 'h1', tradeId: 't-1', role: 'INITIATOR', status: 'ACTIVE', contractAddress: '0x1', hashlock: '0xh', timelock: 999, amount: '1.0', txHash: '0xa', chainType: 'evm', preimage: null },
+        { id: 'h2', tradeId: 't-1', role: 'COUNTERPARTY', status: 'ACTIVE', contractAddress: '0x2', hashlock: '0xh', timelock: 888, amount: '3500', txHash: '0xb', chainType: 'evm', preimage: null },
+      ];
+      const fetchFn = mockFetch({ data: { htlcs } });
       const hl = createSDK(fetchFn);
 
-      const result = await hl.getHTLCStatus('t-1');
-      expect(result?.status).toBe('BOTH_LOCKED');
-      expect(result?.initiatorHTLC?.status).toBe('ACTIVE');
-      expect(result?.counterpartyHTLC?.status).toBe('ACTIVE');
+      const result = await hl.getHTLCs('t-1');
+
+      expect(Array.isArray(result)).toBe(true);
+      expect(result).toHaveLength(2);
+      expect(result[0].role).toBe('INITIATOR');
+      expect(result[1].role).toBe('COUNTERPARTY');
+      const body = JSON.parse(fetchFn.mock.calls[0][1].body);
+      expect(body.query).toContain('htlcs(tradeId');
+      expect(body.query).not.toContain('initiatorHTLC');
+      expect(body.variables.tradeId).toBe('t-1');
     });
 
-    it('should return null for unknown trade', async () => {
-      const fetchFn = mockFetch({ data: { htlcStatus: null } });
+    it('returns an empty array for an unknown trade (clean not-found signal)', async () => {
+      const fetchFn = mockFetch({ data: { htlcs: [] } });
       const hl = createSDK(fetchFn);
 
-      const result = await hl.getHTLCStatus('unknown');
-      expect(result).toBeNull();
+      const result = await hl.getHTLCs('unknown-trade-id');
+      expect(result).toEqual([]);
     });
   });
 
@@ -431,6 +439,94 @@ describe('MCP Tool → SDK Integration', () => {
       expect(result.id).toBe('rfq-human');
       const body = JSON.parse(fetchFn.mock.calls[0][1].body);
       expect(body.variables.attestation).toBeUndefined();
+    });
+  });
+
+  // ─── list_open_rfqs → listRFQs ────────────────────────
+
+  describe('list_open_rfqs (listRFQs)', () => {
+    it('requests ACTIVE rfqs with pagination', async () => {
+      const fetchFn = mockFetch({ data: { rfqs: { rfqs: [{ id: 'r1', userId: 'u1', baseToken: 'ETH', quoteToken: 'USDC', side: 'SELL', amount: '2', isBlind: false, status: 'ACTIVE', expiresAt: null, createdAt: '2026-05-18', quotesCount: 0 }], total: 1, page: 1, pageSize: 20 } } });
+      const hl = createSDK(fetchFn);
+      const result = await hl.listRFQs({ status: 'ACTIVE', page: 1, pageSize: 20 });
+      expect(result.rfqs).toHaveLength(1);
+      const body = JSON.parse(fetchFn.mock.calls[0][1].body);
+      expect(body.variables.status).toBe('ACTIVE');
+      expect(body.variables.pageSize).toBe(20);
+    });
+  });
+
+  // ─── list_my_trades → listTrades ──────────────────────
+
+  describe('list_my_trades (listTrades)', () => {
+    it('passes an optional status filter through', async () => {
+      const fetchFn = mockFetch({ data: { trades: { trades: [], total: 0 } } });
+      const hl = createSDK(fetchFn);
+      await hl.listTrades({ status: 'ACTIVE', page: 1, pageSize: 20 });
+      const body = JSON.parse(fetchFn.mock.calls[0][1].body);
+      expect(body.variables.status).toBe('ACTIVE');
+    });
+  });
+
+  describe('homogenized tool descriptions carry routing markers', () => {
+    // Pin the load-bearing routing markers so a future copy-edit cannot silently
+    // strip the USE WHEN / DO NOT USE WHEN lines that LLM tool-routers depend on.
+    // Each it() asserts text that is UNIQUE to that tool's description — not just
+    // present anywhere in the file — so a per-tool regression is caught individually.
+    let source: string;
+
+    beforeEach(async () => {
+      const fs = await import('node:fs/promises');
+      const path = await import('node:path');
+      const url = await import('node:url');
+      const here = path.dirname(url.fileURLToPath(import.meta.url));
+      source = await fs.readFile(path.resolve(here, '..', 'index.ts'), 'utf8');
+    });
+
+    it('create_htlc description: USE WHEN names the on-chain broadcast precondition', () => {
+      expect(source).toMatch(/USE WHEN:.*broadcast.*lock transaction/);
+    });
+
+    it('create_htlc description: DO NOT USE WHEN names the not-yet-accepted guard', () => {
+      expect(source).toMatch(/DO NOT USE WHEN:.*trade is not yet accepted/);
+    });
+
+    it('create_htlc description: PARAM NOTES declares role values INITIATOR and COUNTERPARTY', () => {
+      expect(source).toMatch(/PARAM NOTES:.*INITIATOR.*COUNTERPARTY/);
+    });
+
+    it('withdraw_htlc description: DO NOT USE WHEN names refund_htlc as the alternative', () => {
+      expect(source).toMatch(/DO NOT USE WHEN:.*timelock.*expired.*refund_htlc/);
+    });
+
+    it('withdraw_htlc description: PARAM NOTES explains the atomicity mechanism via preimage', () => {
+      expect(source).toContain('simultaneously unlocks the counterparty leg');
+    });
+
+    it('refund_htlc description: DO NOT USE WHEN names withdraw_htlc as the alternative', () => {
+      expect(source).toMatch(/DO NOT USE WHEN:.*HAS locked.*withdraw_htlc/);
+    });
+
+    it('refund_htlc description: PARAM NOTES states no preimage needed', () => {
+      expect(source).toContain('No preimage needed');
+    });
+
+    it('respond_rfq description: USE WHEN names list_open_rfqs as the discovery step', () => {
+      expect(source).toMatch(/USE WHEN:.*market maker.*list_open_rfqs/);
+    });
+
+    it('respond_rfq description: DO NOT USE WHEN names create_rfq as the buyer-side alternative', () => {
+      expect(source).toMatch(/DO NOT USE WHEN:.*buyer.*seller.*create_rfq/);
+    });
+
+    it('respond_rfq description: PARAM NOTES explains price semantics', () => {
+      expect(source).toContain('per unit of base token in quote-token terms');
+    });
+
+    it('does not weaken the create_rfq intent compiler', () => {
+      expect(source).toContain('INTENT → PARAMS MAPPING');
+      expect(source).toMatch(/RESTATE/);
+      expect(source).toMatch(/Real funds/);
     });
   });
 

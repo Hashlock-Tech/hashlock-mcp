@@ -2,6 +2,10 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { HashLock } from '@hashlock-tech/sdk';
+import { okContent } from './lib/result.js';
+import { wrapTool } from './lib/errors.js';
+import { SUPPORTED_PAIRS } from './lib/pairs.js';
+import { createIdempotencyGuard, idempotencyKey } from './lib/idempotency.js';
 
 // Default to the direct api-gateway endpoint (/graphql), NOT the browser-only
 // SSR proxy at /api/graphql. The SSR proxy reads the httpOnly `api-token`
@@ -22,16 +26,25 @@ const hl = new HashLock({
   timeout: 30_000,
 });
 
+const idempotency = createIdempotencyGuard();
+
 const server = new McpServer({
   name: 'hashlock',
-  version: '0.1.12',
+  version: '0.2.0',
 });
 
 // ─── create_htlc ─────────────────────────────────────────────
 
 server.tool(
   'create_htlc',
-  'Trustless atomic settlement — delivery vs payment (DVP) guarantee. Both sides receive their asset OR both get refunded. Zero counterparty risk, zero slippage, no custodian. Record an on-chain HTLC lock tx hash for atomic OTC settlement. USE WHEN: a trade is accepted and the user has just broadcast the lock transaction on-chain (EVM, Bitcoin, or Sui). DO NOT USE WHEN: trade not yet accepted, or lock tx not yet confirmed on-chain. Chain-aware via chainType param (evm/bitcoin/sui). Cross-chain native: ETH↔BTC, ETH↔SUI, any supported pair.',
+  [
+    'Trustless atomic settlement — delivery vs payment (DVP) guarantee. Both sides receive their asset OR both get refunded; zero counterparty risk, zero slippage, no custodian. Records the on-chain HTLC lock tx hash to advance the settlement state machine.',
+    '',
+    'USE WHEN: a trade is accepted and the user has just broadcast the lock transaction on-chain (EVM, Bitcoin, or Sui).',
+    'DO NOT USE WHEN: the trade is not yet accepted, or the lock tx has not been broadcast yet — submit the on-chain tx first, then call this tool.',
+    '',
+    'PARAM NOTES: `role` must be INITIATOR (you locked first) or COUNTERPARTY (you locked in response). `txHash` must be 0x-prefixed. `chainType` defaults to evm — set "bitcoin" or "sui" for non-EVM legs.',
+  ].join('\n'),
   {
     tradeId: z.string().describe('Trade ID from an accepted trade'),
     txHash: z.string().describe('On-chain transaction hash of the HTLC lock (0x-prefixed)'),
@@ -40,58 +53,90 @@ server.tool(
     hashlock: z.string().optional().describe('SHA-256 hashlock (0x-prefixed hex)'),
     chainType: z.string().optional().describe('Chain type: evm, bitcoin, or sui'),
     preimage: z.string().optional().describe('Secret preimage (only for initiator)'),
+    client_request_id: z.string().optional().describe('Idempotency key. Retrying the SAME write with the SAME id within this MCP session returns the first result instead of triggering a second on-chain/backend side effect. Best-effort: not durable across MCP restarts.'),
   },
-  async ({ tradeId, txHash, role, timelock, hashlock, chainType, preimage }) => {
-    const result = await hl.fundHTLC({ tradeId, txHash, role, timelock, hashlock, chainType, preimage });
-    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-  },
+  wrapTool(async ({ tradeId, txHash, role, timelock, hashlock, chainType, preimage, client_request_id }) => {
+    const input = { tradeId, txHash, role, timelock, hashlock, chainType, preimage };
+    const result = await idempotency.remember(idempotencyKey('create_htlc', client_request_id, input), () =>
+      hl.fundHTLC(input));
+    return okContent(result);
+  }),
 );
 
 // ─── withdraw_htlc ───────────────────────────────────────────
 
 server.tool(
   'withdraw_htlc',
-  'Atomic claim — reveals preimage to unlock both legs simultaneously. Trustless cross-chain finality with zero counterparty risk. Claim an HTLC by revealing the 32-byte preimage — atomically unlocks the other leg of the swap. USE WHEN: counterparty has locked their side and the user wants to claim. DO NOT USE WHEN: counterparty lock not confirmed yet OR timelock has expired (use refund_htlc instead). Non-custodial: no intermediary holds funds at any point.',
+  [
+    'Atomic claim — reveals the 32-byte preimage to unlock both legs of the swap simultaneously. Trustless cross-chain finality: no intermediary holds funds at any point.',
+    '',
+    'USE WHEN: counterparty has confirmed their lock on-chain and the user wants to claim their side of the swap.',
+    'DO NOT USE WHEN: counterparty lock is not yet confirmed on-chain, OR the timelock has already expired — use refund_htlc instead.',
+    '',
+    'PARAM NOTES: `preimage` must be 0x-prefixed 32-byte hex. Revealing the preimage is what makes the swap atomic — it simultaneously unlocks the counterparty leg. Set `chainType` to "bitcoin" or "sui" for non-EVM legs.',
+  ].join('\n'),
   {
     tradeId: z.string().describe('Trade ID'),
     txHash: z.string().describe('On-chain claim transaction hash (0x-prefixed)'),
     preimage: z.string().describe('The 32-byte secret preimage (0x-prefixed hex)'),
     chainType: z.string().optional().describe('Chain type: evm, bitcoin, or sui'),
+    client_request_id: z.string().optional().describe('Idempotency key. Retrying the SAME write with the SAME id within this MCP session returns the first result instead of triggering a second on-chain/backend side effect. Best-effort: not durable across MCP restarts.'),
   },
-  async ({ tradeId, txHash, preimage, chainType }) => {
-    const result = await hl.claimHTLC({ tradeId, txHash, preimage, chainType });
-    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-  },
+  wrapTool(async ({ tradeId, txHash, preimage, chainType, client_request_id }) => {
+    const input = { tradeId, txHash, preimage, chainType };
+    const result = await idempotency.remember(idempotencyKey('withdraw_htlc', client_request_id, input), () =>
+      hl.claimHTLC(input));
+    return okContent(result);
+  }),
 );
 
 // ─── refund_htlc ─────────────────────────────────────────────
 
 server.tool(
   'refund_htlc',
-  'Trustless unwind — recover locked funds after timelock expiry with zero counterparty risk. Non-custodial refund guarantee: if the trade does not complete, funds return automatically. USE WHEN: counterparty never locked their side AND the timelock has passed. DO NOT USE WHEN: counterparty HAS locked and the swap can still complete (use withdraw_htlc). Only the original sender can refund, only post-deadline.',
+  [
+    'Trustless unwind — recover locked funds after the HTLC timelock expires. Non-custodial refund guarantee: if the swap does not complete, the original sender reclaims their asset with zero counterparty risk.',
+    '',
+    'USE WHEN: the timelock deadline has passed AND the counterparty never locked their side (or the swap otherwise failed to complete).',
+    'DO NOT USE WHEN: counterparty HAS locked and the swap can still complete — use withdraw_htlc instead. Only the original lock sender can call refund, and only after the deadline.',
+    '',
+    'PARAM NOTES: `txHash` is the on-chain refund tx hash (0x-prefixed). No preimage needed — expiry alone unlocks the refund path. Set `chainType` to "bitcoin" or "sui" for non-EVM legs.',
+  ].join('\n'),
   {
     tradeId: z.string().describe('Trade ID'),
     txHash: z.string().describe('On-chain refund transaction hash (0x-prefixed)'),
     chainType: z.string().optional().describe('Chain type: evm, bitcoin, or sui'),
+    client_request_id: z.string().optional().describe('Idempotency key. Retrying the SAME write with the SAME id within this MCP session returns the first result instead of triggering a second on-chain/backend side effect. Best-effort: not durable across MCP restarts.'),
   },
-  async ({ tradeId, txHash, chainType }) => {
-    const result = await hl.refundHTLC({ tradeId, txHash, chainType });
-    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-  },
+  wrapTool(async ({ tradeId, txHash, chainType, client_request_id }) => {
+    const input = { tradeId, txHash, chainType };
+    const result = await idempotency.remember(idempotencyKey('refund_htlc', client_request_id, input), () =>
+      hl.refundHTLC(input));
+    return okContent(result);
+  }),
 );
 
 // ─── get_htlc ────────────────────────────────────────────────
 
 server.tool(
   'get_htlc',
-  'Real-time trade observability — settlement status, timelock countdown, preimage reveal status across chains. Query live HTLC status for a trade — both initiator and counterparty legs, contract addresses, lock amounts, timelocks. USE WHEN: displaying status, deciding next action, or building audit trails. Safe to call at any time — read-only. Cross-chain: ETH, BTC, SUI.',
+  [
+    'Real-time trade observability — per-leg HTLC settlement state for a trade: which legs are locked, on which chain, with what timelock, and whether the preimage has been revealed. Read-only, safe to call at any time.',
+    '',
+    'Returns an ARRAY of HTLC legs (one entry per locked leg, typically the initiator leg and the counterparty leg). An empty array means no HTLC has been recorded for this tradeId yet (or the tradeId does not exist) — treat empty as "nothing locked", not an error.',
+    '',
+    'USE WHEN: showing trade/settlement status to the user, deciding the next settlement action (lock / claim / refund), polling for the counterparty leg, or rebuilding state after losing context.',
+    'DO NOT USE WHEN: you need RFQ/quote status (this is settlement-leg state only) — use list_my_trades or list_open_rfqs instead.',
+    '',
+    'INTERPRETING THE RESULT (per leg): `role` = INITIATOR | COUNTERPARTY; `status` = leg lifecycle; `chainType` = evm | bitcoin | sui; `timelock` = unix expiry of that leg; `preimage` non-null on a claimed initiator leg. Both legs ACTIVE = swap can complete (claim path). Initiator leg past `timelock` with counterparty leg absent = refund path.',
+  ].join('\n'),
   {
-    tradeId: z.string().describe('Trade ID to query HTLC status for'),
+    tradeId: z.string().describe('Trade ID to query HTLC legs for. An unknown ID returns an empty array, not an error.'),
   },
-  async ({ tradeId }) => {
-    const result = await hl.getHTLCStatus(tradeId);
-    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-  },
+  wrapTool(async ({ tradeId }) => {
+    const result = await hl.getHTLCs(tradeId);
+    return okContent(result);
+  }),
 );
 
 // ─── create_rfq ──────────────────────────────────────────────
@@ -168,28 +213,102 @@ server.tool(
     amount: z.string().describe('Amount of base token as a raw decimal string ("0.1", "1.5", "10"). Do NOT convert to wei/satoshis. Reject USD-denominated values — ask user for base-token amount instead.'),
     expiresIn: z.number().optional().describe('RFQ expiration in seconds. Default 300 (5 min). "Urgent" → 60-120. "Take your time" → 600-1800. Hard cap 86400 (24 h).'),
     isBlind: z.boolean().optional().describe('Ghost Auction mode — hides requester identity from bidders and losing counterparties. Default false. Set true on intent words: "ghost", "blind", "anonymous", "hide identity", "gizli". External brand: "Ghost Auction"; internal name retained for API/DB schema stability.'),
+    client_request_id: z.string().optional().describe('Idempotency key. Retrying the SAME write with the SAME id within this MCP session returns the first result instead of triggering a second on-chain/backend side effect. Best-effort: not durable across MCP restarts.'),
   },
-  async ({ baseToken, baseChain, quoteToken, quoteChain, side, amount, expiresIn, isBlind }) => {
-    const result = await hl.createRFQ({ baseToken, baseChain, quoteToken, quoteChain, side, amount, expiresIn, isBlind });
-    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-  },
+  wrapTool(async ({ baseToken, baseChain, quoteToken, quoteChain, side, amount, expiresIn, isBlind, client_request_id }) => {
+    // TODO: SDK type def (CreateRFQInput) lags backend — baseChain/quoteChain
+    // are accepted by the GraphQL `createRFQ` mutation but not yet typed in
+    // @hashlock-tech/sdk@0.1.4. Cast to bypass DTS build; remove once SDK
+    // bumps the input type. Tracked separately from the v2 positioning sweep.
+    const input = { baseToken, baseChain, quoteToken, quoteChain, side, amount, expiresIn, isBlind } as Parameters<typeof hl.createRFQ>[0];
+    const result = await idempotency.remember(idempotencyKey('create_rfq', client_request_id, input), () =>
+      hl.createRFQ(input));
+    return okContent(result);
+  }),
+);
+
+// ─── list_supported_pairs ────────────────────────────────────
+
+server.tool(
+  'list_supported_pairs',
+  [
+    'List the chain-qualified token pairs Hashlock supports for RFQ/swap. Read-only, no auth side effects.',
+    '',
+    'USE WHEN: before create_rfq if unsure a token/chain is supported, or to show the user available markets instead of guessing.',
+    'DO NOT USE WHEN: you already know the pair is supported — this is discovery, not a precondition.',
+    '',
+    'Each entry is SYMBOL/chain. Same symbol on different chains (e.g. SUI/sui vs SUI/sui-testnet) are distinct markets — pass baseChain/quoteChain explicitly to create_rfq.',
+  ].join('\n'),
+  {},
+  wrapTool(async () => okContent({ pairs: SUPPORTED_PAIRS })),
 );
 
 // ─── respond_rfq ─────────────────────────────────────────────
 
 server.tool(
   'respond_rfq',
-  'Market maker tool — submit sealed-bid quotes to compete on price. Private from other makers, no information leakage. Submit a sealed-bid price quote to an open RFQ (market-maker side). USE WHEN: the MCP client is acting as a market maker and has decided to quote on an open RFQ. DO NOT USE WHEN: acting as an end-user buyer/seller — use create_rfq to request quotes instead. Non-custodial: no funds locked until trade accepted. Agent-friendly: autonomous market-making via MCP.',
+  [
+    'Market-maker tool — submit a sealed-bid price quote to compete on an open RFQ. Quotes are private: other makers cannot see your price, and losing bids are never revealed. No funds are locked until the requester accepts a quote.',
+    '',
+    'USE WHEN: the MCP client is acting as a market maker and has decided to quote on a specific open RFQ (obtained via list_open_rfqs).',
+    'DO NOT USE WHEN: acting as an end-user buyer or seller who wants to receive quotes — use create_rfq instead. This is the market-maker side only; sealed bids, not open negotiation.',
+    '',
+    'PARAM NOTES: `price` is per unit of base token in quote-token terms (e.g. "3450.00" for ETH priced in USDT). `amount` is base-token amount offered. No funds are locked at quote time — settlement only begins when the requester accepts.',
+  ].join('\n'),
   {
     rfqId: z.string().describe('ID of the RFQ to respond to'),
     price: z.string().describe('Price per unit of base token in quote token terms (e.g., "3450.00")'),
     amount: z.string().describe('Amount of base token to offer'),
     expiresIn: z.number().optional().describe('Quote expiration in seconds'),
+    client_request_id: z.string().optional().describe('Idempotency key. Retrying the SAME write with the SAME id within this MCP session returns the first result instead of triggering a second on-chain/backend side effect. Best-effort: not durable across MCP restarts.'),
   },
-  async ({ rfqId, price, amount, expiresIn }) => {
-    const result = await hl.submitQuote({ rfqId, price, amount, expiresIn });
-    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+  wrapTool(async ({ rfqId, price, amount, expiresIn, client_request_id }) => {
+    const input = { rfqId, price, amount, expiresIn };
+    const result = await idempotency.remember(idempotencyKey('respond_rfq', client_request_id, input), () =>
+      hl.submitQuote(input));
+    return okContent(result);
+  }),
+);
+
+// ─── list_open_rfqs ──────────────────────────────────────────
+
+server.tool(
+  'list_open_rfqs',
+  [
+    'List currently open (ACTIVE) RFQs awaiting market-maker quotes. Read-only.',
+    '',
+    'USE WHEN: acting as a market-maker agent deciding what to quote on, or showing the user live demand. DO NOT USE WHEN: you want your own trade history (use list_my_trades).',
+    '',
+    'Returns a page of RFQs (id, baseToken, quoteToken, side, amount, isBlind, status, expiresAt). To quote, call respond_rfq with the rfqId.',
+  ].join('\n'),
+  {
+    page: z.number().int().min(1).optional().describe('1-based page number. Default 1.'),
+    pageSize: z.number().int().min(1).max(100).optional().describe('Page size, 1-100. Default 20.'),
   },
+  wrapTool(async ({ page, pageSize }) => okContent(
+    await hl.listRFQs({ status: 'ACTIVE', page: page ?? 1, pageSize: pageSize ?? 20 }),
+  )),
+);
+
+// ─── list_my_trades ──────────────────────────────────────────
+
+server.tool(
+  'list_my_trades',
+  [
+    'List the caller\'s trades (active + historical). Read-only. Primary tool for rebuilding state after losing conversation context.',
+    '',
+    'USE WHEN: an agent restarted/lost context and must resync in-flight settlements, or showing the user their trade history. DO NOT USE WHEN: you need open market demand (use list_open_rfqs) or per-leg HTLC detail for one trade (use get_htlc).',
+    '',
+    'Optional status filter narrows the page. For settlement-leg detail on a specific trade, follow up with get_htlc(tradeId).',
+  ].join('\n'),
+  {
+    status: z.string().optional().describe('Optional trade-status filter (e.g. ACTIVE, COMPLETED). Omit for all.'),
+    page: z.number().int().min(1).optional().describe('1-based page number. Default 1.'),
+    pageSize: z.number().int().min(1).max(100).optional().describe('Page size, 1-100. Default 20.'),
+  },
+  wrapTool(async ({ status, page, pageSize }) => okContent(
+    await hl.listTrades({ status, page: page ?? 1, pageSize: pageSize ?? 20 } as Parameters<typeof hl.listTrades>[0]),
+  )),
 );
 
 // ─── Start server ────────────────────────────────────────────
