@@ -322,5 +322,20 @@ describe('runSwapStatus', () => {
     const out = parse(await runSwapStatus(client, { swap_handle: 'r1' }, noSleep));
     expect(out.still_open).toBe(false);
     expect(out.rfq_status).toBe('EXPIRED');
+    expect(out.status).toBe('OPEN');
+  });
+
+  // F1 parity: forbidden/unauthorized RFQ must collapse to uniform SWAP_NOT_FOUND (same as runSwapExecute)
+  it('forbidden RFQ collapses to SWAP_NOT_FOUND (no oracle, parity with runSwapExecute)', async () => {
+    const client = fakeClient({
+      getRFQ: async () => { throw new Error('You are not a participant of this RFQ'); },
+      getQuotes: async () => { throw new Error('getQuotes must NOT be called'); },
+    });
+    const out = parse(await runSwapStatus(client, { swap_handle: 'someone-elses' }, noSleep));
+    expect(out.outcome).toBe('SWAP_NOT_FOUND');
+  });
+  it('a non-forbidden getRFQ error propagates (not swallowed)', async () => {
+    const client = fakeClient({ getRFQ: async () => { throw new Error('network down'); } });
+    await expect(runSwapStatus(client, { swap_handle: 'r1' }, noSleep)).rejects.toThrow('network down');
   });
 });

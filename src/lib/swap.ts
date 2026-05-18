@@ -228,7 +228,20 @@ export interface SwapStatusArgs { swap_handle: string; max_wait_seconds?: number
 export async function runSwapStatus(
   client: SwapClient, args: SwapStatusArgs, sleep: Sleep,
 ): Promise<ToolContent> {
-  const rfq = await client.getRFQ(args.swap_handle);
+  let rfq: SwapRfq | null;
+  try {
+    rfq = await client.getRFQ(args.swap_handle);
+  } catch (err) {
+    // Uniform not-found contract (same as runSwapExecute): a forbidden/unauthorized
+    // RFQ (exists but caller is not a participant) must NOT be distinguishable from
+    // a non-existent one, or swap_handle becomes an existence/participant oracle.
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/forbidden|not a participant|unauthor|\b401\b|\b403\b/i.test(msg)) {
+      return okContent({ outcome: 'SWAP_NOT_FOUND', swap_handle: args.swap_handle,
+        next: 'Verify the swap_handle, or open a fresh swap with swap_quote.' });
+    }
+    throw err;
+  }
   if (!rfq) {
     return okContent({ outcome: 'SWAP_NOT_FOUND', swap_handle: args.swap_handle,
       next: 'Verify the swap_handle, or open a fresh swap with swap_quote.' });
