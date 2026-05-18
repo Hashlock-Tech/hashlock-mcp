@@ -30,7 +30,7 @@ const idempotency = createIdempotencyGuard();
 
 const server = new McpServer({
   name: 'hashlock',
-  version: '0.1.12',
+  version: '0.2.0',
 });
 
 // ─── create_htlc ─────────────────────────────────────────────
@@ -277,8 +277,8 @@ server.tool(
     'Returns a page of RFQs (id, baseToken, quoteToken, side, amount, isBlind, status, expiresAt). To quote, call respond_rfq with the rfqId.',
   ].join('\n'),
   {
-    page: z.number().optional().describe('1-based page number. Default 1.'),
-    pageSize: z.number().optional().describe('Page size, 1-100. Default 20.'),
+    page: z.number().int().min(1).optional().describe('1-based page number. Default 1.'),
+    pageSize: z.number().int().min(1).max(100).optional().describe('Page size, 1-100. Default 20.'),
   },
   wrapTool(async ({ page, pageSize }) => okContent(
     await hl.listRFQs({ status: 'ACTIVE', page: page ?? 1, pageSize: pageSize ?? 20 }),
@@ -298,8 +298,8 @@ server.tool(
   ].join('\n'),
   {
     status: z.string().optional().describe('Optional trade-status filter (e.g. ACTIVE, COMPLETED). Omit for all.'),
-    page: z.number().optional().describe('1-based page number. Default 1.'),
-    pageSize: z.number().optional().describe('Page size, 1-100. Default 20.'),
+    page: z.number().int().min(1).optional().describe('1-based page number. Default 1.'),
+    pageSize: z.number().int().min(1).max(100).optional().describe('Page size, 1-100. Default 20.'),
   },
   wrapTool(async ({ status, page, pageSize }) => okContent(
     await hl.listTrades({ status, page: page ?? 1, pageSize: pageSize ?? 20 } as Parameters<typeof hl.listTrades>[0]),
