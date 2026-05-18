@@ -3,6 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { HashLock } from '@hashlock-tech/sdk';
 import { okContent } from './lib/result.js';
+import { wrapTool } from './lib/errors.js';
 
 // Default to the direct api-gateway endpoint (/graphql), NOT the browser-only
 // SSR proxy at /api/graphql. The SSR proxy reads the httpOnly `api-token`
@@ -42,10 +43,10 @@ server.tool(
     chainType: z.string().optional().describe('Chain type: evm, bitcoin, or sui'),
     preimage: z.string().optional().describe('Secret preimage (only for initiator)'),
   },
-  async ({ tradeId, txHash, role, timelock, hashlock, chainType, preimage }) => {
+  wrapTool(async ({ tradeId, txHash, role, timelock, hashlock, chainType, preimage }) => {
     const result = await hl.fundHTLC({ tradeId, txHash, role, timelock, hashlock, chainType, preimage });
     return okContent(result);
-  },
+  }),
 );
 
 // ─── withdraw_htlc ───────────────────────────────────────────
@@ -59,10 +60,10 @@ server.tool(
     preimage: z.string().describe('The 32-byte secret preimage (0x-prefixed hex)'),
     chainType: z.string().optional().describe('Chain type: evm, bitcoin, or sui'),
   },
-  async ({ tradeId, txHash, preimage, chainType }) => {
+  wrapTool(async ({ tradeId, txHash, preimage, chainType }) => {
     const result = await hl.claimHTLC({ tradeId, txHash, preimage, chainType });
     return okContent(result);
-  },
+  }),
 );
 
 // ─── refund_htlc ─────────────────────────────────────────────
@@ -75,10 +76,10 @@ server.tool(
     txHash: z.string().describe('On-chain refund transaction hash (0x-prefixed)'),
     chainType: z.string().optional().describe('Chain type: evm, bitcoin, or sui'),
   },
-  async ({ tradeId, txHash, chainType }) => {
+  wrapTool(async ({ tradeId, txHash, chainType }) => {
     const result = await hl.refundHTLC({ tradeId, txHash, chainType });
     return okContent(result);
-  },
+  }),
 );
 
 // ─── get_htlc ────────────────────────────────────────────────
@@ -98,10 +99,10 @@ server.tool(
   {
     tradeId: z.string().describe('Trade ID to query HTLC legs for. An unknown ID returns an empty array, not an error.'),
   },
-  async ({ tradeId }) => {
+  wrapTool(async ({ tradeId }) => {
     const result = await hl.getHTLCs(tradeId);
     return okContent(result);
-  },
+  }),
 );
 
 // ─── create_rfq ──────────────────────────────────────────────
@@ -179,14 +180,14 @@ server.tool(
     expiresIn: z.number().optional().describe('RFQ expiration in seconds. Default 300 (5 min). "Urgent" → 60-120. "Take your time" → 600-1800. Hard cap 86400 (24 h).'),
     isBlind: z.boolean().optional().describe('Ghost Auction mode — hides requester identity from bidders and losing counterparties. Default false. Set true on intent words: "ghost", "blind", "anonymous", "hide identity", "gizli". External brand: "Ghost Auction"; internal name retained for API/DB schema stability.'),
   },
-  async ({ baseToken, baseChain, quoteToken, quoteChain, side, amount, expiresIn, isBlind }) => {
+  wrapTool(async ({ baseToken, baseChain, quoteToken, quoteChain, side, amount, expiresIn, isBlind }) => {
     // TODO: SDK type def (CreateRFQInput) lags backend — baseChain/quoteChain
     // are accepted by the GraphQL `createRFQ` mutation but not yet typed in
     // @hashlock-tech/sdk@0.2.0. Cast to bypass DTS build; remove once SDK
     // bumps the input type. Tracked separately from the v2 positioning sweep.
     const result = await hl.createRFQ({ baseToken, baseChain, quoteToken, quoteChain, side, amount, expiresIn, isBlind } as Parameters<typeof hl.createRFQ>[0]);
     return okContent(result);
-  },
+  }),
 );
 
 // ─── respond_rfq ─────────────────────────────────────────────
@@ -200,10 +201,10 @@ server.tool(
     amount: z.string().describe('Amount of base token to offer'),
     expiresIn: z.number().optional().describe('Quote expiration in seconds'),
   },
-  async ({ rfqId, price, amount, expiresIn }) => {
+  wrapTool(async ({ rfqId, price, amount, expiresIn }) => {
     const result = await hl.submitQuote({ rfqId, price, amount, expiresIn });
     return okContent(result);
-  },
+  }),
 );
 
 // ─── Start server ────────────────────────────────────────────
