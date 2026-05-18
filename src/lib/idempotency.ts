@@ -23,6 +23,10 @@ export function createIdempotencyGuard(): IdempotencyGuard {
         cache.delete(key); // failed write is retryable — drop so a retry can proceed
         return Promise.reject(err);
       });
+      // Eviction drops the oldest key by insertion order. If that entry is
+      // still in-flight (pending), a re-entry for the same key will re-run
+      // the op — acceptable: this guard is in-process and best-effort, and
+      // 1000 simultaneous in-flight writes is not a realistic scenario here.
       if (cache.size >= MAX_ENTRIES) {
         const oldest = cache.keys().next().value;
         if (oldest !== undefined) cache.delete(oldest);
