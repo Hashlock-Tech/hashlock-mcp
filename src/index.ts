@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { HashLock } from '@hashlock-tech/sdk';
 import { okContent } from './lib/result.js';
 import { wrapTool } from './lib/errors.js';
+import { SUPPORTED_PAIRS } from './lib/pairs.js';
 
 // Default to the direct api-gateway endpoint (/graphql), NOT the browser-only
 // SSR proxy at /api/graphql. The SSR proxy reads the httpOnly `api-token`
@@ -188,6 +189,22 @@ server.tool(
     const result = await hl.createRFQ({ baseToken, baseChain, quoteToken, quoteChain, side, amount, expiresIn, isBlind } as Parameters<typeof hl.createRFQ>[0]);
     return okContent(result);
   }),
+);
+
+// ─── list_supported_pairs ────────────────────────────────────
+
+server.tool(
+  'list_supported_pairs',
+  [
+    'List the chain-qualified token pairs Hashlock supports for RFQ/swap. Read-only, no auth side effects.',
+    '',
+    'USE WHEN: before create_rfq if unsure a token/chain is supported, or to show the user available markets instead of guessing.',
+    'DO NOT USE WHEN: you already know the pair is supported — this is discovery, not a precondition.',
+    '',
+    'Each entry is SYMBOL/chain. Same symbol on different chains (e.g. SUI/sui vs SUI/sui-testnet) are distinct markets — pass baseChain/quoteChain explicitly to create_rfq.',
+  ].join('\n'),
+  {},
+  wrapTool(async () => okContent({ pairs: SUPPORTED_PAIRS })),
 );
 
 // ─── respond_rfq ─────────────────────────────────────────────
