@@ -469,7 +469,12 @@ describe('MCP Tool → SDK Integration', () => {
   });
 
   describe('homogenized tool descriptions carry routing markers', () => {
+    // Pin the load-bearing routing markers so a future copy-edit cannot silently
+    // strip the USE WHEN / DO NOT USE WHEN lines that LLM tool-routers depend on.
+    // Each it() asserts text that is UNIQUE to that tool's description — not just
+    // present anywhere in the file — so a per-tool regression is caught individually.
     let source: string;
+
     beforeEach(async () => {
       const fs = await import('node:fs/promises');
       const path = await import('node:path');
@@ -478,23 +483,50 @@ describe('MCP Tool → SDK Integration', () => {
       source = await fs.readFile(path.resolve(here, '..', 'index.ts'), 'utf8');
     });
 
-    for (const tool of ['create_htlc', 'withdraw_htlc', 'refund_htlc', 'get_htlc', 'respond_rfq']) {
-      it(`${tool} description has USE WHEN and DO NOT USE WHEN`, () => {
-        expect(source).toContain('USE WHEN');
-        expect(source).toContain('DO NOT USE WHEN');
-      });
-    }
+    it('create_htlc description: USE WHEN names the on-chain broadcast precondition', () => {
+      expect(source).toMatch(/USE WHEN:.*broadcast.*lock transaction/);
+    });
 
-    it('every non-create_rfq tool description block contains both markers', () => {
-      const useWhen = (source.match(/USE WHEN:/g) ?? []).length;
-      const dontUse = (source.match(/DO NOT USE WHEN:/g) ?? []).length;
-      expect(useWhen).toBeGreaterThanOrEqual(6);
-      expect(dontUse).toBeGreaterThanOrEqual(6);
+    it('create_htlc description: DO NOT USE WHEN names the not-yet-accepted guard', () => {
+      expect(source).toMatch(/DO NOT USE WHEN:.*trade is not yet accepted/);
+    });
+
+    it('create_htlc description: PARAM NOTES declares role values INITIATOR and COUNTERPARTY', () => {
+      expect(source).toMatch(/PARAM NOTES:.*INITIATOR.*COUNTERPARTY/);
+    });
+
+    it('withdraw_htlc description: DO NOT USE WHEN names refund_htlc as the alternative', () => {
+      expect(source).toMatch(/DO NOT USE WHEN:.*timelock.*expired.*refund_htlc/);
+    });
+
+    it('withdraw_htlc description: PARAM NOTES explains the atomicity mechanism via preimage', () => {
+      expect(source).toContain('simultaneously unlocks the counterparty leg');
+    });
+
+    it('refund_htlc description: DO NOT USE WHEN names withdraw_htlc as the alternative', () => {
+      expect(source).toMatch(/DO NOT USE WHEN:.*HAS locked.*withdraw_htlc/);
+    });
+
+    it('refund_htlc description: PARAM NOTES states no preimage needed', () => {
+      expect(source).toContain('No preimage needed');
+    });
+
+    it('respond_rfq description: USE WHEN names list_open_rfqs as the discovery step', () => {
+      expect(source).toMatch(/USE WHEN:.*market maker.*list_open_rfqs/);
+    });
+
+    it('respond_rfq description: DO NOT USE WHEN names create_rfq as the buyer-side alternative', () => {
+      expect(source).toMatch(/DO NOT USE WHEN:.*buyer.*seller.*create_rfq/);
+    });
+
+    it('respond_rfq description: PARAM NOTES explains price semantics', () => {
+      expect(source).toContain('per unit of base token in quote-token terms');
     });
 
     it('does not weaken the create_rfq intent compiler', () => {
       expect(source).toContain('INTENT → PARAMS MAPPING');
       expect(source).toMatch(/RESTATE/);
+      expect(source).toMatch(/Real funds/);
     });
   });
 
