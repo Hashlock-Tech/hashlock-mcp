@@ -101,13 +101,12 @@ describe('pollForQuotes', () => {
     const client = fakeClient({ getQuotes: async () => { calls += 1; return []; } });
     const quotes = await pollForQuotes(client, 'r1', 'SELL', '10', 20, noSleep);
     expect(quotes).toEqual([]);
-    expect(calls).toBeGreaterThanOrEqual(2);
+    expect(calls).toBe(9);
   });
   it('caps wait at 25s (negative/huge inputs clamped)', async () => {
     let calls = 0;
     const client = fakeClient({ getQuotes: async () => { calls += 1; return []; } });
     await pollForQuotes(client, 'r1', 'SELL', '10', 9999, noSleep);
-    const capped = await (async () => calls)();
     expect(calls).toBeLessThanOrEqual(11);
   });
 });

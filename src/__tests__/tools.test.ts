@@ -530,6 +530,40 @@ describe('MCP Tool → SDK Integration', () => {
     });
   });
 
+  describe('layer-2 swap facade descriptions + router boundary (pinned)', () => {
+    let source: string;
+    beforeEach(async () => {
+      const fs = await import('node:fs/promises');
+      const path = await import('node:path');
+      const url = await import('node:url');
+      const here = path.dirname(url.fileURLToPath(import.meta.url));
+      source = await fs.readFile(path.resolve(here, '..', 'index.ts'), 'utf8');
+    });
+
+    it('registers all four swap tools', () => {
+      for (const t of ['swap_quote', 'swap_status', 'swap_execute', 'swap_cancel']) {
+        expect(source).toContain(`'${t}'`);
+      }
+    });
+    it('swap_quote DO NOT USE WHEN routes maker-aware control to create_rfq', () => {
+      expect(source).toMatch(/swap_quote[\s\S]*DO NOT USE WHEN:[\s\S]*create_rfq/);
+    });
+    it('swap_execute description states real-funds confirm + sealed limit semantics', () => {
+      expect(source).toMatch(/swap_execute[\s\S]*limit_price[\s\S]*(SELL|floor)/);
+      expect(source).toMatch(/swap_execute[\s\S]*Real funds/);
+    });
+    it('swap_execute warns accepted_amount may exceed requested (full-fill v1)', () => {
+      expect(source).toMatch(/accepted_amount may EXCEED your requested amount/);
+    });
+    it('swap_quote declares the private (Ghost Auction) default ON', () => {
+      expect(source).toMatch(/private[\s\S]*default[\s\S]*(true|ON)/i);
+    });
+    it('create_rfq intent-compiler remains byte-stable (unchanged Layer-1 pins)', () => {
+      expect(source).toContain('INTENT → PARAMS MAPPING');
+      expect(source).toMatch(/RESTATE/);
+    });
+  });
+
   // ─── Error scenarios ───────────────────────────────────
 
   describe('error handling', () => {
