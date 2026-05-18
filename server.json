@@ -23,7 +23,7 @@
       ],
       "environmentVariables": [
         { "description": "SIWE JWT from hashlock.markets/sign/login", "isRequired": true, "isSecret": true, "name": "HASHLOCK_ACCESS_TOKEN" },
-        { "description": "GraphQL endpoint override", "default": "https://hashlock.markets/api/graphql", "name": "HASHLOCK_ENDPOINT" }
+        { "description": "GraphQL endpoint override", "default": "https://hashlock.markets/graphql", "name": "HASHLOCK_ENDPOINT" }
       ]
     }
   ],
