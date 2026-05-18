@@ -59,11 +59,21 @@ export function limitSatisfied(bestPrice: string, limitPrice: string, side: Side
   return side === 'SELL' ? cmp >= 0 : cmp <= 0;
 }
 
-/** Eligible = PENDING and amount covers the request (full-fill v1).
- *  SELL → max price; BUY → min price. null if none. */
+/** Fail-closed money-input grammar: a positive decimal string with no commas,
+ *  no scientific notation, no sign, no bare leading dot. Mirrors the backend
+ *  `positiveAmount` grammar so an ill-formed quote/limit can never be selected.
+ *  compareDecimal stays a total order on well-formed input — this guards it. */
+export function isPositiveDecimal(s: string): boolean {
+  return /^\d+(\.\d+)?$/.test((s ?? '').trim());
+}
+
+/** Eligible = PENDING, well-formed price+amount, and amount covers the request
+ *  (full-fill v1). SELL → max price; BUY → min price. null if none. */
 export function selectBestBid(quotes: SwapQuote[], side: Side, requestedAmount: string): SwapQuote | null {
   const eligible = quotes.filter(
-    (x) => x.status === SELECTABLE_QUOTE && compareDecimal(x.amount, requestedAmount) >= 0,
+    (x) => x.status === SELECTABLE_QUOTE
+      && isPositiveDecimal(x.price) && isPositiveDecimal(x.amount)
+      && compareDecimal(x.amount, requestedAmount) >= 0,
   );
   if (eligible.length === 0) return null;
   return eligible.reduce((best, x) => {
@@ -140,7 +150,20 @@ export interface SwapExecuteArgs {
 export async function runSwapExecute(
   client: SwapClient, args: SwapExecuteArgs, remember: Remember,
 ): Promise<ToolContent> {
-  const rfq = await client.getRFQ(args.swap_handle);
+  let rfq: SwapRfq | null;
+  try {
+    rfq = await client.getRFQ(args.swap_handle);
+  } catch (err) {
+    // Uniform not-found contract: a forbidden/unauthorized RFQ (exists but the
+    // caller is not a participant) must NOT be distinguishable from a
+    // non-existent one, or swap_handle becomes an existence/participant oracle.
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/forbidden|not a participant|unauthor|\b401\b|\b403\b/i.test(msg)) {
+      return okContent({ outcome: 'SWAP_NOT_FOUND', swap_handle: args.swap_handle,
+        next: 'Verify the swap_handle, or open a fresh swap with swap_quote.' });
+    }
+    throw err;
+  }
   if (!rfq) {
     return okContent({ outcome: 'SWAP_NOT_FOUND', swap_handle: args.swap_handle,
       next: 'Verify the swap_handle, or open a fresh swap with swap_quote.' });
@@ -149,37 +172,47 @@ export async function runSwapExecute(
     return okContent({ outcome: 'SWAP_NOT_OPEN', swap_handle: args.swap_handle, rfq_status: rfq.status,
       next: 'This swap can no longer be executed. Open a fresh swap with swap_quote.' });
   }
+  if (!args.quote_id && args.limit_price === undefined) {
+    return okContent({ outcome: 'CONFIRMATION_REQUIRED', swap_handle: args.swap_handle,
+      next: 'Real funds. Re-call swap_execute with EITHER limit_price (auto-takes best bid iff it meets your bound) OR quote_id (from swap_status best_bid.quote_id) to confirm the exact price.' });
+  }
   const quotes = await client.getQuotes(args.swap_handle);
 
   let chosen: SwapQuote | null;
   if (args.quote_id) {
     chosen = quotes.find(
       (x) => x.id === args.quote_id && x.status === SELECTABLE_QUOTE
+        && isPositiveDecimal(x.price) && isPositiveDecimal(x.amount)
         && compareDecimal(x.amount, rfq.amount) >= 0,
     ) ?? null;
     if (!chosen) {
       return okContent({ outcome: 'QUOTE_NOT_AVAILABLE', swap_handle: args.swap_handle, quote_id: args.quote_id,
         next: 'That quote expired or was outbid. Re-check live bids with swap_status.' });
     }
-  } else if (args.limit_price !== undefined) {
+  } else {
+    // limit_price is defined here (the no-args case returned CONFIRMATION_REQUIRED above).
+    if (!isPositiveDecimal(args.limit_price as string)) {
+      return okContent({ outcome: 'INVALID_LIMIT_PRICE', swap_handle: args.swap_handle,
+        limit_price: args.limit_price,
+        next: 'limit_price must be a positive decimal string like "3450.00" — no commas, no scientific notation, no negative.' });
+    }
     const best = selectBestBid(quotes, rfq.side, rfq.amount);
     if (!best) {
       return okContent({ outcome: 'NO_ACCEPTABLE_FILL', swap_handle: args.swap_handle, best_price: null,
         limit_price: args.limit_price, side: rfq.side, bids_seen: quotes.length,
         next: 'No eligible bids yet. swap_status to wait, or swap_cancel.' });
     }
-    if (!limitSatisfied(best.price, args.limit_price, rfq.side)) {
+    if (!limitSatisfied(best.price, args.limit_price as string, rfq.side)) {
       return okContent({ outcome: 'NO_ACCEPTABLE_FILL', swap_handle: args.swap_handle, best_price: best.price,
         limit_price: args.limit_price, side: rfq.side, bids_seen: quotes.length,
         next: 'Best bid does not meet your limit. swap_status to wait for better, or swap_cancel.' });
     }
     chosen = best;
-  } else {
-    return okContent({ outcome: 'CONFIRMATION_REQUIRED', swap_handle: args.swap_handle,
-      next: 'Real funds. Re-call swap_execute with EITHER limit_price (auto-takes best bid iff it meets your bound) OR quote_id (from swap_status best_bid.quote_id) to confirm the exact price.' });
   }
 
-  const accept = await remember(() => client.acceptQuote(chosen!.id));
+  if (!chosen) throw new Error('invariant: chosen must be set before accept');
+  // Idempotency key is composed at the index.ts tool handler (Layer-1 pattern); this fn receives a pre-bound Remember.
+  const accept = await remember(() => client.acceptQuote(chosen.id));
   return okContent({
     trade_id: accept.trade?.id ?? null,
     rfq_id: accept.rfqId,

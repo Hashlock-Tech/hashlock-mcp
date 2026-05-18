@@ -157,7 +157,7 @@ describe('runSwapQuote', () => {
   });
 });
 
-import { runSwapExecute } from '../lib/swap.js';
+import { runSwapExecute, isPositiveDecimal } from '../lib/swap.js';
 
 const SELL_RFQ = { id: 'r1', side: 'SELL' as const, amount: '10', status: 'QUOTES_RECEIVED' };
 const pendingBids = [
@@ -204,14 +204,96 @@ describe('runSwapExecute', () => {
     expect(out.outcome).toBe('QUOTE_NOT_AVAILABLE');
   });
   it('SWAP_NOT_OPEN when the RFQ is in a terminal state', async () => {
-    const client = fakeClient({ getRFQ: async () => ({ ...SELL_RFQ, status: 'CANCELLED' }) });
+    const client = fakeClient({
+      getRFQ: async () => ({ ...SELL_RFQ, status: 'CANCELLED' }),
+      getQuotes: async () => { throw new Error('getQuotes must NOT be called'); },
+      acceptQuote: async () => { throw new Error('acceptQuote must NOT be called'); },
+    });
     const out = parse(await runSwapExecute(client, { swap_handle: 'r1', limit_price: '1' }, passthrough));
     expect(out.outcome).toBe('SWAP_NOT_OPEN');
     expect(out.rfq_status).toBe('CANCELLED');
   });
   it('SWAP_NOT_FOUND when the handle is unknown', async () => {
-    const client = fakeClient({ getRFQ: async () => null });
+    const client = fakeClient({
+      getRFQ: async () => null,
+      getQuotes: async () => { throw new Error('getQuotes must NOT be called'); },
+      acceptQuote: async () => { throw new Error('acceptQuote must NOT be called'); },
+    });
     const out = parse(await runSwapExecute(client, { swap_handle: 'nope', limit_price: '1' }, passthrough));
     expect(out.outcome).toBe('SWAP_NOT_FOUND');
+  });
+
+  // FIX 1 (F1): forbidden/unauthorized RFQ must collapse to uniform SWAP_NOT_FOUND
+  it('forbidden RFQ (not a participant) collapses to SWAP_NOT_FOUND (no oracle)', async () => {
+    const client = fakeClient({
+      getRFQ: async () => { throw new Error('You are not a participant of this RFQ'); },
+      getQuotes: async () => { throw new Error('getQuotes must NOT be called'); },
+      acceptQuote: async () => { throw new Error('acceptQuote must NOT be called'); },
+    });
+    const out = parse(await runSwapExecute(client, { swap_handle: 'someone-elses', limit_price: '1' }, passthrough));
+    expect(out.outcome).toBe('SWAP_NOT_FOUND');
+    expect(out.swap_handle).toBe('someone-elses');
+    expect(out.next).toBe('Verify the swap_handle, or open a fresh swap with swap_quote.');
+  });
+  it('non-forbidden getRFQ throw propagates (not over-broadly swallowed)', async () => {
+    const client = fakeClient({ getRFQ: async () => { throw new Error('network down'); } });
+    await expect(runSwapExecute(client, { swap_handle: 'r1', limit_price: '1' }, passthrough))
+      .rejects.toThrow('network down');
+  });
+
+  // FIX 2 (F4): fail-closed price/amount validation
+  it('selectBestBid excludes a higher-but-malformed-price quote', () => {
+    const best = selectBestBid(
+      [q({ id: 'bad', price: '9,999', amount: '10' }), q({ id: 'good', price: '3400', amount: '10' })],
+      'SELL', '10');
+    expect(best?.id).toBe('good');
+  });
+  it('runSwapExecute rejects a malformed agent limit_price with INVALID_LIMIT_PRICE', async () => {
+    // Per the M1 control order getQuotes runs before the limit grammar check;
+    // the load-bearing invariant is that no money is moved (acceptQuote unreached).
+    const client = fakeClient({
+      getRFQ: async () => SELL_RFQ,
+      getQuotes: async () => pendingBids,
+      acceptQuote: async () => { throw new Error('acceptQuote must NOT be called'); },
+    });
+    const out = parse(await runSwapExecute(client, { swap_handle: 'r1', limit_price: '3,500' }, passthrough));
+    expect(out.outcome).toBe('INVALID_LIMIT_PRICE');
+    expect(out.limit_price).toBe('3,500');
+  });
+  it('isPositiveDecimal accepts well-formed and rejects malformed', () => {
+    expect(isPositiveDecimal('3450.00')).toBe(true);
+    expect(isPositiveDecimal('1')).toBe(true);
+    expect(isPositiveDecimal(' 3450 ')).toBe(true);
+    expect(isPositiveDecimal('3,500')).toBe(false);
+    expect(isPositiveDecimal('1e3')).toBe(false);
+    expect(isPositiveDecimal('')).toBe(false);
+    expect(isPositiveDecimal('abc')).toBe(false);
+    expect(isPositiveDecimal('-1')).toBe(false);
+    expect(isPositiveDecimal('.5')).toBe(false);
+  });
+
+  // TEST HARDENING: NO_ACCEPTABLE_FILL with empty quotes
+  it('NO_ACCEPTABLE_FILL with empty quotes (best is null)', async () => {
+    const client = fakeClient({ getRFQ: async () => SELL_RFQ, getQuotes: async () => [] });
+    const out = parse(await runSwapExecute(client, { swap_handle: 'r1', limit_price: '1' }, passthrough));
+    expect(out.outcome).toBe('NO_ACCEPTABLE_FILL');
+    expect(out.best_price).toBeNull();
+  });
+
+  // TEST HARDENING: BUY-side happy path (lowest price wins, ceiling satisfied)
+  it('BUY-side accepts the LOWEST covering bid within the ceiling', async () => {
+    let accepted: string | undefined;
+    const buyRfq = { id: 'rb', side: 'BUY' as const, amount: '10', status: 'ACTIVE' };
+    const buyBids = [
+      { id: 'bhi', rfqId: 'rb', marketMakerId: 'mm', price: '3500', amount: '10', status: 'PENDING' },
+      { id: 'blo', rfqId: 'rb', marketMakerId: 'mm', price: '3400', amount: '10', status: 'PENDING' },
+    ];
+    const client = fakeClient({
+      getRFQ: async () => buyRfq, getQuotes: async () => buyBids,
+      acceptQuote: async (id: string) => { accepted = id; return { id, rfqId: 'rb', status: 'ACCEPTED', trade: { id: 'tb', status: 'PROPOSED' } }; },
+    });
+    const out = parse(await runSwapExecute(client, { swap_handle: 'rb', limit_price: '3450' }, passthrough));
+    expect(accepted).toBe('blo');
+    expect(out.accepted_price).toBe('3400');
   });
 });
