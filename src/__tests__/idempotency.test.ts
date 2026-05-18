@@ -37,4 +37,35 @@ describe('createIdempotencyGuard', () => {
     await guard.remember(undefined, op);
     expect(op).toHaveBeenCalledTimes(2);
   });
+
+  it('concurrent same-key calls run op exactly once', async () => {
+    const guard = createIdempotencyGuard();
+    let calls = 0;
+    const op = vi.fn(async () => {
+      calls++;
+      await new Promise((r) => setTimeout(r, 10));
+      return { ok: calls };
+    });
+    const [a, b] = await Promise.all([
+      guard.remember('k1', op),
+      guard.remember('k1', op),
+    ]);
+    expect(op).toHaveBeenCalledTimes(1);
+    expect(a).toEqual(b);
+  });
+
+  it('failed concurrent calls evict the cache so retries can proceed', async () => {
+    const guard = createIdempotencyGuard();
+    const op = vi.fn()
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValue({ ok: 2 });
+    await expect(Promise.all([
+      guard.remember('k1', op),
+      guard.remember('k1', op),
+    ])).rejects.toThrow('boom');
+    expect(op).toHaveBeenCalledTimes(1);
+    const result = await guard.remember('k1', op);
+    expect(result).toEqual({ ok: 2 });
+    expect(op).toHaveBeenCalledTimes(2);
+  });
 });

@@ -11,14 +11,18 @@ export interface IdempotencyGuard {
 }
 
 export function createIdempotencyGuard(): IdempotencyGuard {
-  const cache = new Map<string, unknown>();
+  const cache = new Map<string, Promise<unknown>>();
   return {
     async remember<T>(key: string | undefined, op: () => Promise<T>): Promise<T> {
       if (!key) return op();
-      if (cache.has(key)) return cache.get(key) as T;
-      const result = await op(); // only cache on success — a thrown write is retryable
-      cache.set(key, result);
-      return result;
+      const existing = cache.get(key);
+      if (existing) return existing as Promise<T>;
+      const promise = op().catch((err) => {
+        cache.delete(key); // failed write is retryable — drop so a retry can proceed
+        return Promise.reject(err);
+      });
+      cache.set(key, promise);
+      return promise as Promise<T>;
     },
   };
 }
