@@ -130,12 +130,24 @@ export async function runSwapQuote(
     client, rfq.id, args.side, args.amount, args.max_wait_seconds ?? 20, deps.sleep,
   );
   const best = selectBestBid(quotes, args.side, args.amount);
+  // still_open must reflect a POST-poll status: the RFQ can expire during the
+  // bounded wait when the agent set expiresIn <= the wait window. The caller
+  // owns this RFQ (just created it) so a forbidden throw is not expected here;
+  // still, a status-refresh failure is advisory-only and must not break the
+  // quote response — fall back to the create-time status.
+  let latestStatus = rfq.status;
+  try {
+    const latest = await client.getRFQ(rfq.id);
+    if (latest) latestStatus = latest.status;
+  } catch {
+    // status refresh is advisory-only; fall back to the create-time status
+  }
   return okContent({
     swap_handle: rfq.id,
     status: best ? 'QUOTED' : 'OPEN',
     best_bid: bidView(best),
     bids_seen: quotes.length,
-    still_open: RFQ_OPEN_STATES.has(rfq.status),
+    still_open: RFQ_OPEN_STATES.has(latestStatus),
     limit_price: args.limit_price ?? null,
     next: best
       ? 'swap_execute with this swap_handle + your limit_price (or best_bid.quote_id) to take it; or swap_status to let competition build; or swap_cancel to abort.'
@@ -171,6 +183,10 @@ export async function runSwapExecute(
   if (!RFQ_OPEN_STATES.has(rfq.status)) {
     return okContent({ outcome: 'SWAP_NOT_OPEN', swap_handle: args.swap_handle, rfq_status: rfq.status,
       next: 'This swap can no longer be executed. Open a fresh swap with swap_quote.' });
+  }
+  if (args.quote_id && args.limit_price !== undefined) {
+    return okContent({ outcome: 'INVALID_EXECUTION_PARAMS', swap_handle: args.swap_handle,
+      next: 'Provide EXACTLY ONE of quote_id (take that exact bid) or limit_price (auto-take best within your bound) — not both. They are distinct confirmation modes; passing both is ambiguous on a real-funds accept.' });
   }
   if (!args.quote_id && args.limit_price === undefined) {
     return okContent({ outcome: 'CONFIRMATION_REQUIRED', swap_handle: args.swap_handle,

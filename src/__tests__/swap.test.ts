@@ -147,6 +147,46 @@ describe('runSwapQuote', () => {
     expect(out.still_open).toBe(true);
   });
 
+  // FIX A (CodeRabbit PR#7, Minor): still_open must reflect a POST-poll RFQ
+  // status refresh, not the stale create-time status (the RFQ can expire during
+  // the bounded wait when expiresIn <= the wait window).
+  it('still_open true when the RFQ stays open through the wait (getRFQ ACTIVE)', async () => {
+    const client = fakeClient({
+      createRFQ: async () => ({ id: 'rq', status: 'ACTIVE' }),
+      getRFQ: async () => ({ id: 'rq', side: 'SELL', amount: '1', status: 'ACTIVE' }),
+      getQuotes: async () => [],
+    });
+    const out = parse(await runSwapQuote(client, { side: 'SELL', baseToken: 'ETH', quoteToken: 'USDT', amount: '1' },
+      { sleep: noSleep, remember: passthrough }));
+    expect(out.still_open).toBe(true);
+    expect(out.status).toBe('OPEN');
+  });
+
+  it('still_open false when the RFQ EXPIRES during the bounded wait', async () => {
+    const client = fakeClient({
+      createRFQ: async () => ({ id: 'rq', status: 'ACTIVE' }),
+      getRFQ: async () => ({ id: 'rq', side: 'SELL', amount: '1', status: 'EXPIRED' }),
+      getQuotes: async () => [],
+    });
+    const out = parse(await runSwapQuote(client, { side: 'SELL', baseToken: 'ETH', quoteToken: 'USDT', amount: '1' },
+      { sleep: noSleep, remember: passthrough }));
+    expect(out.still_open).toBe(false);
+    expect(out.status).toBe('OPEN'); // status still maps from bids (no eligible bid)
+  });
+
+  it('post-poll getRFQ throw falls back to create-time status (still_open true, no throw)', async () => {
+    const client = fakeClient({
+      createRFQ: async () => ({ id: 'rq', status: 'ACTIVE' }),
+      getRFQ: async () => { throw new Error('network blip'); },
+      getQuotes: async () => [],
+    });
+    const out = parse(await runSwapQuote(client, { side: 'SELL', baseToken: 'ETH', quoteToken: 'USDT', amount: '1' },
+      { sleep: noSleep, remember: passthrough }));
+    expect(out.still_open).toBe(true);
+    expect(out.swap_handle).toBe('rq');
+    expect(out.status).toBe('OPEN');
+  });
+
   it('honors private:false override', async () => {
     let createInput: any;
     const client = fakeClient({ createRFQ: async (i: unknown) => { createInput = i; return { id: 'r', status: 'ACTIVE' }; }, getQuotes: async () => [] });
@@ -277,6 +317,20 @@ describe('runSwapExecute', () => {
     const out = parse(await runSwapExecute(client, { swap_handle: 'r1', limit_price: '1' }, passthrough));
     expect(out.outcome).toBe('NO_ACCEPTABLE_FILL');
     expect(out.best_price).toBeNull();
+  });
+
+  // FIX B (CodeRabbit PR#7, Major money-path): both quote_id AND limit_price is
+  // ambiguous on a real-funds accept — must reject WITHOUT fetching quotes or accepting.
+  it('INVALID_EXECUTION_PARAMS when BOTH quote_id and limit_price given (no getQuotes, no acceptQuote)', async () => {
+    const client = fakeClient({
+      getRFQ: async () => SELL_RFQ,
+      getQuotes: async () => { throw new Error('getQuotes must NOT be called'); },
+      acceptQuote: async () => { throw new Error('acceptQuote must NOT be called'); },
+    });
+    const out = parse(await runSwapExecute(
+      client, { swap_handle: 'r1', quote_id: 'qa', limit_price: '3450' }, passthrough));
+    expect(out.outcome).toBe('INVALID_EXECUTION_PARAMS');
+    expect(out.swap_handle).toBe('r1');
   });
 
   // TEST HARDENING: BUY-side happy path (lowest price wins, ceiling satisfied)
