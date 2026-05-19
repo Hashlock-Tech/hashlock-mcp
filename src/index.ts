@@ -6,6 +6,10 @@ import { okContent } from './lib/result.js';
 import { wrapTool } from './lib/errors.js';
 import { SUPPORTED_PAIRS } from './lib/pairs.js';
 import { createIdempotencyGuard, idempotencyKey } from './lib/idempotency.js';
+import {
+  runSwapQuote, runSwapStatus, runSwapExecute, runSwapCancel,
+  type SwapClient,
+} from './lib/swap.js';
 
 // Default to the direct api-gateway endpoint (/graphql), NOT the browser-only
 // SSR proxy at /api/graphql. The SSR proxy reads the httpOnly `api-token`
@@ -30,7 +34,7 @@ const idempotency = createIdempotencyGuard();
 
 const server = new McpServer({
   name: 'hashlock',
-  version: '0.3.0',
+  version: '0.4.0',
 });
 
 // ─── create_htlc ─────────────────────────────────────────────
@@ -309,6 +313,99 @@ server.tool(
   wrapTool(async ({ status, page, pageSize }) => okContent(
     await hl.listTrades({ status, page: page ?? 1, pageSize: pageSize ?? 20 } as Parameters<typeof hl.listTrades>[0]),
   )),
+);
+
+// The real HashLock instance structurally satisfies SwapClient; same cast
+// style as the existing create_rfq / list_my_trades call sites.
+const swapClient = hl as unknown as SwapClient;
+const realSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+// ─── swap_quote ──────────────────────────────────────────────
+server.tool(
+  'swap_quote',
+  [
+    'One-call OTC swap intake for agents — opens a sealed-bid Ghost Auction under the hood and waits briefly for the first private market-maker bids, then hands back a swap_handle + the best bid so far. Async by design: there is NO public synchronous price (that is the privacy guarantee). Zero slippage: the bid you execute is the fill.',
+    '',
+    'USE WHEN: an agent/user wants to "just swap X for Y" and have the facade manage quote collection + best-bid selection + a price guard. Privacy-sensitive or large flow.',
+    'DO NOT USE WHEN: the caller wants explicit market-maker-aware RFQ control and will pick/accept quotes itself — use create_rfq. Sub-second DEX fills — use a DEX aggregator.',
+    '',
+    'PARAM NOTES: `limit_price` is your sealed reservation — for SELL it is a FLOOR (min you will accept), for BUY a CEILING (max you will pay), per unit of base in quote-token terms. It is NEVER sent to makers. `private` defaults true (Ghost Auction ON — hides your identity from bidders); set false for an open auction. After this returns, call swap_execute (with the same limit_price, or best_bid.quote_id) to take it, swap_status to let competition build, or swap_cancel to abort. Real funds: restate the resolved deal to the user before executing.',
+  ].join('\n'),
+  {
+    side: z.enum(['BUY', 'SELL']).describe('SELL = dispose of baseToken; BUY = acquire baseToken.'),
+    baseToken: z.string().describe('Base asset symbol (see list_supported_pairs).'),
+    baseChain: z.enum(['ethereum', 'sepolia', 'bitcoin', 'bitcoin-signet', 'sui', 'sui-testnet']).optional().describe('Chain the base token settles on.'),
+    quoteToken: z.string().describe('Quote asset symbol.'),
+    quoteChain: z.enum(['ethereum', 'sepolia', 'bitcoin', 'bitcoin-signet', 'sui', 'sui-testnet']).optional().describe('Chain the quote token settles on.'),
+    amount: z.string().describe('Base-token amount as a raw decimal string ("0.1", "2"). Do NOT convert to wei/satoshis.'),
+    limit_price: z.string().optional().describe('Sealed reservation. SELL=floor, BUY=ceiling, per unit of base in quote terms. Never sent to makers.'),
+    private: z.boolean().optional().describe('Ghost Auction (hide requester identity). Default true. Set false for an open auction.'),
+    expiresIn: z.number().optional().describe('RFQ lifetime seconds. Default 300. Hard cap 86400.'),
+    max_wait_seconds: z.number().optional().describe('How long swap_quote waits for first bids. Default 20, capped 25.'),
+    client_request_id: z.string().optional().describe('Idempotency key. Same id within this MCP session returns the first result instead of opening a second RFQ. Best-effort: not durable across restarts.'),
+  },
+  wrapTool(async (a) => {
+    const input = { side: a.side, baseToken: a.baseToken, baseChain: a.baseChain, quoteToken: a.quoteToken, quoteChain: a.quoteChain, amount: a.amount, expiresIn: a.expiresIn, isBlind: a.private ?? true };
+    return runSwapQuote(swapClient, a, {
+      sleep: realSleep,
+      remember: (op) => idempotency.remember(idempotencyKey('swap_quote', a.client_request_id, input), op),
+    });
+  }),
+);
+
+// ─── swap_status ─────────────────────────────────────────────
+server.tool(
+  'swap_status',
+  [
+    'Re-poll an open swap by its swap_handle — returns the current best sealed bid + how many bids are in. Read-only, stateless: the primary way to resume a swap after losing context (only the swap_handle is needed).',
+    '',
+    'USE WHEN: letting maker competition build before executing, or rebuilding an in-flight swap after a context reset. DO NOT USE WHEN: you need settlement-leg detail (use get_htlc) or your trade history (use list_my_trades).',
+    '',
+    'PARAM NOTES: returns best_bid (or null), bids_seen, still_open and rfq_status. When best_bid is present, swap_execute with the same limit_price (or best_bid.quote_id) to take it.',
+  ].join('\n'),
+  {
+    swap_handle: z.string().describe('The swap_handle returned by swap_quote (the RFQ id).'),
+    max_wait_seconds: z.number().optional().describe('Bounded wait for new bids this call. Default 15, capped 25.'),
+  },
+  wrapTool(async (a) => runSwapStatus(swapClient, a, realSleep)),
+);
+
+// ─── swap_execute ────────────────────────────────────────────
+server.tool(
+  'swap_execute',
+  [
+    'Accept the winning sealed bid for a swap and create the trade. Real funds. Provide EITHER limit_price (auto-takes the best bid only if it meets your bound) OR quote_id (the exact bid you saw via swap_status). With neither, this refuses (CONFIRMATION_REQUIRED) rather than guess — restate the price to the user first.',
+    '',
+    'USE WHEN: a swap has an acceptable bid and the user confirmed. DO NOT USE WHEN: you have not surfaced the price to the user, or you want maker-side quoting (use respond_rfq).',
+    '',
+    'PARAM NOTES: `limit_price` is the sealed reservation (SELL=floor, BUY=ceiling) and must be re-supplied here — it is deliberately never stored. WARNING: accepted_amount may EXCEED your requested amount if a maker quoted a larger size (full-fill v1 accepts a bid whose amount covers the request) — always reconcile accepted_amount against what you asked before settling on-chain. On success returns trade_id; settle on-chain next via create_htlc. This does NOT lock funds itself (non-custodial).',
+  ].join('\n'),
+  {
+    swap_handle: z.string().describe('The swap_handle (RFQ id) from swap_quote.'),
+    limit_price: z.string().optional().describe('Sealed reservation. SELL=floor, BUY=ceiling. Re-supply it here; never persisted.'),
+    quote_id: z.string().optional().describe('Exact bid id from swap_status best_bid.quote_id (explicit-confirm path).'),
+    client_request_id: z.string().optional().describe('Idempotency key. Same id within this session returns the first result instead of accepting twice. Best-effort.'),
+  },
+  wrapTool(async (a) => runSwapExecute(swapClient, a,
+    (op) => idempotency.remember(idempotencyKey('swap_execute', a.client_request_id, { h: a.swap_handle, q: a.quote_id, l: a.limit_price }), op))),
+);
+
+// ─── swap_cancel ─────────────────────────────────────────────
+server.tool(
+  'swap_cancel',
+  [
+    'Abort an open swap before it executes (cancels the underlying RFQ). No funds were locked. Use when the limit never meets, the user changed their mind, or to clean up a stale swap_handle.',
+    '',
+    'USE WHEN: backing out of a swap_quote that has not been executed. DO NOT USE WHEN: the swap already executed (a trade exists) — settlement is governed by the HTLC timelock, not this tool.',
+    '',
+    'PARAM NOTES: idempotent within a session via client_request_id.',
+  ].join('\n'),
+  {
+    swap_handle: z.string().describe('The swap_handle (RFQ id) to cancel.'),
+    client_request_id: z.string().optional().describe('Idempotency key. Best-effort within this session.'),
+  },
+  wrapTool(async (a) => runSwapCancel(swapClient, a,
+    (op) => idempotency.remember(idempotencyKey('swap_cancel', a.client_request_id, { h: a.swap_handle }), op))),
 );
 
 // ─── Start server ────────────────────────────────────────────
