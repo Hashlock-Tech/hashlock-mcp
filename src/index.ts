@@ -10,6 +10,7 @@ import {
   runSwapQuote, runSwapStatus, runSwapExecute, runSwapCancel,
   type SwapClient,
 } from './lib/swap.js';
+import { createComputeCapacityListingTool, createComputeCapacityRfqShape } from './tools/compute/create_compute_capacity_listing.js';
 
 // Default to the direct api-gateway endpoint (/graphql), NOT the browser-only
 // SSR proxy at /api/graphql. The SSR proxy reads the httpOnly `api-token`
@@ -406,6 +407,17 @@ server.tool(
   },
   wrapTool(async (a) => runSwapCancel(swapClient, a,
     (op) => idempotency.remember(idempotencyKey('swap_cancel', a.client_request_id, { h: a.swap_handle }), op))),
+);
+
+// ─── create_compute_capacity_listing ─────────────────────────
+
+server.tool(
+  createComputeCapacityListingTool.name,
+  createComputeCapacityListingTool.description,
+  createComputeCapacityRfqShape,
+  wrapTool(async (args) =>
+    createComputeCapacityListingTool.handler(args, { authToken: ACCESS_TOKEN }),
+  ),
 );
 
 // ─── Start server ────────────────────────────────────────────
