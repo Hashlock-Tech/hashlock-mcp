@@ -40,6 +40,15 @@ const VALID = {
 
 const ctx = { authToken: 'fake-bearer-token' };
 
+/** Parse the structured error envelope from a tool response content[0].text */
+function parseErrorEnvelope(text: string): {
+  error: { code: string; message: string; is_retryable: boolean; recovery_hint: string };
+} {
+  return JSON.parse(text) as {
+    error: { code: string; message: string; is_retryable: boolean; recovery_hint: string };
+  };
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('create_compute_capacity_listing MCP tool (PR2.1b)', () => {
@@ -52,14 +61,20 @@ describe('create_compute_capacity_listing MCP tool (PR2.1b)', () => {
     expect(createComputeCapacityListingTool.name).toBe('create_compute_capacity_listing');
   });
 
-  // Case 2: Zod validation rejects invalid input
+  // Case 2: Zod validation rejects invalid input — structured error envelope
   it('rejects invalid input via Zod (regionCode wrong byte width)', async () => {
     // '0xshort' is not 8-byte hex (needs exactly 16 hex chars after 0x)
     const bad = { ...VALID, regionCode: '0xshort' };
     const res = await createComputeCapacityListingTool.handler(bad, ctx);
-    expect(res.isError).toBe(true);
+
     // callGraphQL must NOT have been called — validation fires first
     expect(vi.mocked(callGraphQL)).not.toHaveBeenCalled();
+
+    const text = (res.content[0] as { text: string }).text;
+    const envelope = parseErrorEnvelope(text);
+    expect(envelope.error.code).toBe('VALIDATION_ERROR');
+    expect(envelope.error.is_retryable).toBe(false);
+    expect(envelope.error.message).toMatch(/[Ii]nvalid/);
   });
 
   // Case 3: Happy path — successful GraphQL call
@@ -80,38 +95,45 @@ describe('create_compute_capacity_listing MCP tool (PR2.1b)', () => {
 
     const res = await createComputeCapacityListingTool.handler(VALID, ctx);
 
-    expect(res.isError).toBeUndefined();
-    expect(res.content).toHaveLength(1);
-
+    // No error field — happy path returns plain data
     const text = (res.content[0] as { text: string }).text;
+    const parsed = JSON.parse(text) as Record<string, unknown>;
+    expect(parsed).not.toHaveProperty('error');
     expect(text).toContain('"tokenId": "7777"');
     expect(text).toContain('mintInstruction');
     expect(text).toContain('"tradeId": "trade-1"');
+    // Chain name lookup
+    expect(text).toContain('Sepolia');
   });
 
-  // Case 4: GraphQL errors[] surfaced as MCP error
-  it('surfaces GraphQL errors[0].message as an MCP error', async () => {
+  // Case 4: GraphQL errors[] surfaced as structured error envelope
+  it('surfaces GraphQL errors[0].message as a structured error envelope', async () => {
     vi.mocked(callGraphQL).mockResolvedValueOnce({
       errors: [{ message: 'Compute-capacity trading is not enabled for this account.' }],
     });
 
     const res = await createComputeCapacityListingTool.handler(VALID, ctx);
 
-    expect(res.isError).toBe(true);
     const text = (res.content[0] as { text: string }).text;
-    expect(text).toContain('not enabled');
+    const envelope = parseErrorEnvelope(text);
+    expect(envelope.error.message).toContain('not enabled');
+    expect(envelope.error.is_retryable).toBe(false);
+    expect(typeof envelope.error.code).toBe('string');
+    expect(typeof envelope.error.recovery_hint).toBe('string');
   });
 
-  // Case 5: Network failure (rejected promise) → MCP error, no throw
-  it('surfaces network failure as an MCP error (no throw)', async () => {
+  // Case 5: Network failure (rejected promise) → structured error envelope, no throw
+  it('surfaces network failure as a structured error envelope (no throw)', async () => {
     vi.mocked(callGraphQL).mockRejectedValueOnce(new Error('ECONNREFUSED'));
 
-    // Must not throw — always resolves with isError:true
+    // Must not throw — always resolves with structured error content
     const res = await createComputeCapacityListingTool.handler(VALID, ctx);
 
-    expect(res.isError).toBe(true);
     const text = (res.content[0] as { text: string }).text;
-    expect(text).toContain('ECONNREFUSED');
+    const envelope = parseErrorEnvelope(text);
+    expect(envelope.error.message).toContain('ECONNREFUSED');
+    expect(typeof envelope.error.code).toBe('string');
+    expect(typeof envelope.error.is_retryable).toBe('boolean');
   });
 
   // Bonus Case 6: callGraphQL receives correct Bearer token
@@ -142,6 +164,10 @@ describe('create_compute_capacity_listing MCP tool (PR2.1b)', () => {
   it('rejects chainId that is not 11155111', async () => {
     const bad = { ...VALID, chainId: 1 };
     const res = await createComputeCapacityListingTool.handler(bad, ctx);
-    expect(res.isError).toBe(true);
+
+    const text = (res.content[0] as { text: string }).text;
+    const envelope = parseErrorEnvelope(text);
+    expect(envelope.error.code).toBe('VALIDATION_ERROR');
+    expect(envelope.error.is_retryable).toBe(false);
   });
 });

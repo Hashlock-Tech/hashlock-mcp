@@ -415,16 +415,9 @@ server.tool(
   createComputeCapacityListingTool.name,
   createComputeCapacityListingTool.description,
   createComputeCapacityRfqShape,
-  wrapTool(async (args) => {
-    const result = await createComputeCapacityListingTool.handler(
-      args,
-      { authToken: ACCESS_TOKEN },
-    );
-    // wrapTool expects ToolContent ({ content: [...] }); the tool returns
-    // either { content, isError } or { content }. Strip isError so wrapTool
-    // stays clean — errors were already rendered as human-readable text.
-    return { content: result.content };
-  }),
+  wrapTool(async (args) =>
+    createComputeCapacityListingTool.handler(args, { authToken: ACCESS_TOKEN }),
+  ),
 );
 
 // ─── Start server ────────────────────────────────────────────

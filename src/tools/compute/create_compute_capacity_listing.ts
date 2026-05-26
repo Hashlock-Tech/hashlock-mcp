@@ -21,6 +21,8 @@
 
 import { z } from 'zod';
 import { callGraphQL } from '../../lib/graphql-client.js';
+import { okContent, type ToolContent } from '../../lib/result.js';
+import { toErrorEnvelope } from '../../lib/errors.js';
 
 // ─── Input schema (mirrors @otc/shared createComputeCapacityRfqSchema) ────────
 
@@ -87,23 +89,13 @@ const CREATE_COMPUTE_CAPACITY_RFQ_MUTATION = /* GraphQL */ `
   }
 `;
 
-// ─── MCP tool response helpers ────────────────────────────────────────────────
+// ─── Chain name lookup ────────────────────────────────────────────────────────
 
-interface McpContent {
-  type: 'text';
-  text: string;
-}
-
-interface McpToolResponse {
-  isError?: boolean;
-  content: McpContent[];
-}
-
-function mcpError(message: string): McpToolResponse {
-  return {
-    isError: true,
-    content: [{ type: 'text', text: message }],
-  };
+function chainName(chainId: string): string {
+  if (chainId === '11155111') return 'Sepolia';
+  if (chainId === '1') return 'Ethereum mainnet';
+  if (chainId === '8453') return 'Base mainnet';
+  return `chainId ${chainId}`;
 }
 
 // ─── Tool definition ──────────────────────────────────────────────────────────
@@ -118,28 +110,29 @@ export const createComputeCapacityListingTool = {
   description: [
     'List a new compute-capacity batch for sale on Hashlock Markets.',
     '',
-    'Records the listing intent on the platform (creates an optimistic attestation_leg row). ',
-    'The provider must separately execute the on-chain ComputeSettlement.mint(...) transaction ',
-    'from their own EVM wallet — use the returned tokenId, contractAddress and chainId to ',
-    'construct the call. The platform reconciles once it observes the TokenMinted event with ',
+    'Records the listing intent on the platform (creates an optimistic attestation_leg row). ' +
+    'The provider must separately execute the on-chain ComputeSettlement.mint(...) transaction ' +
+    'from their own EVM wallet — use the returned tokenId, contractAddress and chainId to ' +
+    'construct the call. The platform reconciles once it observes the TokenMinted event with ' +
     'the matching deterministic tokenId.',
     '',
-    'USE WHEN: acting as a compute provider and wanting to list a compute-capacity batch for',
-    'purchase by buyers on Hashlock Markets.',
+    'USE WHEN: acting as a compute provider and wanting to list a compute-capacity batch for ' +
+    'purchase by buyers on Hashlock Markets. ' +
     'DO NOT USE WHEN: acting as a buyer — use create_rfq for the buy side.',
     '',
-    'PREREQUISITE: The calling account must have the `compute_trading` feature flag enabled.',
+    'PREREQUISITE: The calling account must have the `compute_trading` feature flag enabled. ' +
     'If not, the backend returns an actionable error message — do NOT retry.',
-  ].join(''),
+  ].join('\n'),
   inputSchema: createComputeCapacityRfqSchema,
-  handler: async (args: unknown, ctx: ToolContext): Promise<McpToolResponse> => {
+  handler: async (args: unknown, ctx: ToolContext): Promise<ToolContent> => {
     // 1. Validate input via Zod.
     let validated: CreateComputeCapacityRfqInput;
     try {
       validated = createComputeCapacityRfqSchema.parse(args);
     } catch (err) {
-      return mcpError(
-        `Invalid input: ${err instanceof Error ? err.message : String(err)}`,
+      // Zod errors contain 'invalid'/'validation' text → classifies as VALIDATION_ERROR.
+      return toErrorEnvelope(
+        new Error(`Invalid input: ${err instanceof Error ? err.message : String(err)}`),
       );
     }
 
@@ -165,45 +158,38 @@ export const createComputeCapacityListingTool = {
         variables: { input: validated },
       });
     } catch (err) {
-      return mcpError(
-        `createComputeCapacityRfq network error: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      // Network / fetch failures — pass through so classifyError applies its
+      // retryability heuristics (UPSTREAM_RPC_ERROR for fetch failures, etc.).
+      return toErrorEnvelope(err);
     }
 
-    // 3. Surface GraphQL errors as MCP errors (Apollo silent-swallow guard).
+    // 3. Surface GraphQL errors as structured envelope (Apollo silent-swallow guard).
     if (result.errors?.length) {
-      return mcpError(
-        result.errors[0]?.message ?? 'createComputeCapacityRfq failed (no message)',
+      return toErrorEnvelope(
+        new Error(
+          result.errors[0]?.message ?? 'createComputeCapacityRfq failed (no message)',
+        ),
       );
     }
 
     const payload = result.data?.createComputeCapacityRfq;
     if (!payload?.attestationLeg) {
-      return mcpError('createComputeCapacityRfq returned no attestationLeg');
+      return toErrorEnvelope(
+        new Error('createComputeCapacityRfq returned no attestationLeg'),
+      );
     }
 
     const leg = payload.attestationLeg;
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(
-            {
-              tradeId: payload.trade.id,
-              tokenId: leg.tokenId,
-              contractAddress: leg.contractAddress,
-              chainId: leg.chainId,
-              state: leg.state,
-              mintInstruction:
-                `Next: call ComputeSettlement.mint(...) on chain ${leg.chainId} ` +
-                `at ${leg.contractAddress} with the exact params you submitted; ` +
-                `the platform reconciles tokenId ${leg.tokenId} on-event.`,
-            },
-            null,
-            2,
-          ),
-        },
-      ],
-    };
+    return okContent({
+      tradeId: payload.trade.id,
+      tokenId: leg.tokenId,
+      contractAddress: leg.contractAddress,
+      chainId: leg.chainId,
+      state: leg.state,
+      mintInstruction:
+        `Next: call ComputeSettlement.mint(...) on ${chainName(leg.chainId)} (chainId ${leg.chainId}) ` +
+        `at ${leg.contractAddress} with the exact params you submitted; ` +
+        `the platform reconciles tokenId ${leg.tokenId} on-event.`,
+    });
   },
 };
