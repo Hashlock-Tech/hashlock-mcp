@@ -61,7 +61,6 @@ const ACCEPT_COMPUTE_CAPACITY_LISTING_MUTATION = /* GraphQL */ `
         contractAddress
         chainId
         state
-        buyerSigner
       }
       buyInstruction
     }
@@ -111,9 +110,8 @@ export const acceptComputeCapacityListingTool = {
           attestationLeg: {
             tokenId: string;
             contractAddress: string;
-            chainId: string;
+            chainId: string | null;
             state: string;
-            buyerSigner: string;
           } | null;
           buyInstruction: string;
         };
@@ -154,9 +152,8 @@ export const acceptComputeCapacityListingTool = {
       tokenId: leg.tokenId,
       contractAddress: leg.contractAddress,
       chainId: leg.chainId,
-      chain: chainName(leg.chainId),
+      chain: leg.chainId != null ? chainName(leg.chainId) : 'unknown chain',
       state: leg.state,
-      buyerSigner: leg.buyerSigner,
       buyInstruction: payload.buyInstruction,
     });
   },
