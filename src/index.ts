@@ -11,6 +11,7 @@ import {
   type SwapClient,
 } from './lib/swap.js';
 import { createComputeCapacityListingTool, createComputeCapacityRfqShape } from './tools/compute/create_compute_capacity_listing.js';
+import { acceptComputeCapacityListingTool, acceptComputeCapacityListingShape } from './tools/compute/accept_compute_capacity_listing.js';
 
 // Default to the direct api-gateway endpoint (/graphql), NOT the browser-only
 // SSR proxy at /api/graphql. The SSR proxy reads the httpOnly `api-token`
@@ -417,6 +418,17 @@ server.tool(
   createComputeCapacityRfqShape,
   wrapTool(async (args) =>
     createComputeCapacityListingTool.handler(args, { authToken: ACCESS_TOKEN }),
+  ),
+);
+
+// ─── accept_compute_capacity_listing ─────────────────────────
+
+server.tool(
+  acceptComputeCapacityListingTool.name,
+  acceptComputeCapacityListingTool.description,
+  acceptComputeCapacityListingShape,
+  wrapTool(async (args) =>
+    acceptComputeCapacityListingTool.handler(args, { authToken: ACCESS_TOKEN }),
   ),
 );
 
