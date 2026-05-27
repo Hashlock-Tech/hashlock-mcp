@@ -23,6 +23,7 @@ import { z } from 'zod';
 import { callGraphQL } from '../../lib/graphql-client.js';
 import { okContent, type ToolContent } from '../../lib/result.js';
 import { toErrorEnvelope } from '../../lib/errors.js';
+import { chainName } from '../../lib/chain-name.js';
 
 // ─── Input schema (mirrors @otc/shared createComputeCapacityRfqSchema) ────────
 
@@ -88,15 +89,6 @@ const CREATE_COMPUTE_CAPACITY_RFQ_MUTATION = /* GraphQL */ `
     }
   }
 `;
-
-// ─── Chain name lookup ────────────────────────────────────────────────────────
-
-function chainName(chainId: string): string {
-  if (chainId === '11155111') return 'Sepolia';
-  if (chainId === '1') return 'Ethereum mainnet';
-  if (chainId === '8453') return 'Base mainnet';
-  return `chainId ${chainId}`;
-}
 
 // ─── Tool definition ──────────────────────────────────────────────────────────
 
