@@ -148,4 +148,11 @@ Do **not** use these — they depended on an intent REST API that was never ship
 
 - **Website**: [hashlock.markets](https://hashlock.markets)
 - **MCP Endpoint (remote)**: [hashlock.markets/mcp](https://hashlock.markets/mcp)
-- **SIWE Login**: [hashlock.markets/sign/login](https://has
+- **SIWE Login**: [hashlock.markets/sign/login](https://hashlock.markets/sign/login)
+
+## Architecture
+
+How this server is structured, the six tools, the `create_rfq` intent compiler, and how it
+connects to the Hashlock Markets backend (and the `@hashlock-tech/sdk` it wraps):
+[`docs/architecture/ARCHITECTURE.md`](./docs/architecture/ARCHITECTURE.md)
+· [Русский](./docs/architecture/ARCHITECTURE.ru.md).
