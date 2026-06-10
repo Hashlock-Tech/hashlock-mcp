@@ -216,7 +216,7 @@ server.tool(
     quoteToken: z.string().describe('Quote asset symbol from the supported list. Same rules as baseToken.'),
     quoteChain: z.enum(['ethereum', 'sepolia', 'bitcoin', 'bitcoin-signet', 'sui', 'sui-testnet']).optional().describe('Chain the quote token settles on. Same inference rules as baseChain. Cross-environment pairs are allowed (e.g. baseChain="sui" + quoteChain="sepolia").'),
     side: z.enum(['BUY', 'SELL']).describe('BUY = user wants to acquire baseToken; SELL = user wants to dispose of baseToken. Map "sell/swap/exchange/liquidate/convert/sat" → SELL, "buy/acquire/al" → BUY.'),
-    amount: z.string().describe('Amount of base token as a raw decimal string ("0.1", "1.5", "10"). Do NOT convert to wei/satoshis. Reject USD-denominated values — ask user for base-token amount instead.'),
+    amount: z.string().describe('Amount of base token as a raw decimal string ("0.1", "1.5", "10"). Do NOT convert to wei/satoshis. Reject USD-denominated values — ask user for base-token amount instead. NOTE: the HashLock INTENTS surface (intent-schema / ai-sdk) uses smallest-unit INTEGER strings instead — never reuse values across surfaces without converting.'),
     expiresIn: z.number().optional().describe('RFQ expiration in seconds. Default 300 (5 min). "Urgent" → 60-120. "Take your time" → 600-1800. Hard cap 86400 (24 h).'),
     isBlind: z.boolean().optional().describe('Ghost Auction mode — hides requester identity from bidders and losing counterparties. Default false. Set true on intent words: "ghost", "blind", "anonymous", "hide identity", "gizli". External brand: "Ghost Auction"; internal name retained for API/DB schema stability.'),
     client_request_id: z.string().optional().describe('Idempotency key. Retrying the SAME write with the SAME id within this MCP session returns the first result instead of triggering a second on-chain/backend side effect. Best-effort: not durable across MCP restarts.'),
@@ -308,18 +308,25 @@ server.tool(
     'Optional status filter narrows the page. For settlement-leg detail on a specific trade, follow up with get_htlc(tradeId).',
   ].join('\n'),
   {
-    status: z.string().optional().describe('Optional trade-status filter (e.g. ACTIVE, COMPLETED). Omit for all.'),
+    // Mirrors the sdk's TradeStatus union — typed enum instead of a free
+    // string so the agent sees the real states and tsc checks the pass-through
+    status: z.enum([
+      'PROPOSED', 'ACCEPTED', 'FUNDING', 'FUNDED', 'INITIATOR_LOCKED',
+      'BOTH_LOCKED', 'EXECUTING', 'SETTLING', 'COMPLETED', 'REFUNDED',
+      'FAILED', 'CANCELLED', 'EXPIRED',
+    ]).optional().describe('Optional trade-status filter. Omit for all.'),
     page: z.number().int().min(1).optional().describe('1-based page number. Default 1.'),
     pageSize: z.number().int().min(1).max(100).optional().describe('Page size, 1-100. Default 20.'),
   },
   wrapTool(async ({ status, page, pageSize }) => okContent(
-    await hl.listTrades({ status, page: page ?? 1, pageSize: pageSize ?? 20 } as Parameters<typeof hl.listTrades>[0]),
+    await hl.listTrades({ status, page: page ?? 1, pageSize: pageSize ?? 20 }),
   )),
 );
 
-// The real HashLock instance structurally satisfies SwapClient; same cast
-// style as the existing create_rfq / list_my_trades call sites.
-const swapClient = hl as unknown as SwapClient;
+// sdk@0.2.0 carries the full method surface — no cast needed (the old
+// `as unknown as SwapClient` bypass against the 0.1.4 types suppressed
+// ALL structural checking; audit SDK-pin finding).
+const swapClient: SwapClient = hl;
 const realSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 // ─── swap_quote ──────────────────────────────────────────────
@@ -339,7 +346,7 @@ server.tool(
     baseChain: z.enum(['ethereum', 'sepolia', 'bitcoin', 'bitcoin-signet', 'sui', 'sui-testnet']).optional().describe('Chain the base token settles on.'),
     quoteToken: z.string().describe('Quote asset symbol.'),
     quoteChain: z.enum(['ethereum', 'sepolia', 'bitcoin', 'bitcoin-signet', 'sui', 'sui-testnet']).optional().describe('Chain the quote token settles on.'),
-    amount: z.string().describe('Base-token amount as a raw decimal string ("0.1", "2"). Do NOT convert to wei/satoshis.'),
+    amount: z.string().describe('Base-token amount as a raw decimal string ("0.1", "2"). Do NOT convert to wei/satoshis. NOTE: the HashLock INTENTS surface uses smallest-unit INTEGER strings instead — never reuse values across surfaces without converting.'),
     limit_price: z.string().optional().describe('Sealed reservation. SELL=floor, BUY=ceiling, per unit of base in quote terms. Never sent to makers.'),
     private: z.boolean().optional().describe('Ghost Auction (hide requester identity). Default true. Set false for an open auction.'),
     expiresIn: z.number().optional().describe('RFQ lifetime seconds. Default 300. Hard cap 86400.'),
