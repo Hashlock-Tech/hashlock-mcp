@@ -1,6 +1,6 @@
 # @hashlock-tech/mcp
 
-> **Hashlock Markets** — the atomic settlement layer for the agent economy. HTLC-based atomic settlement: live on Ethereum and Sui mainnets, with Bitcoin mainnet-ready via P2WSH HTLC scripts (no contract to deploy; signet-validated). No bridges, no custodians, no trust assumptions. Sealed-bid RFQ + HTLC fused into one atomic operation. The settlement primitive AI agents use to trade across chains. MCP-native (6 tools).
+> **Hashlock Markets** — the atomic settlement layer for the agent economy. HTLC-based atomic settlement: live on Ethereum and Sui mainnets, with Bitcoin mainnet-ready via P2WSH HTLC scripts (no contract to deploy; signet-validated). No bridges, no custodians, no trust assumptions. Sealed-bid RFQ + HTLC fused into one atomic operation. The settlement primitive AI agents use to trade across chains. MCP-native (15 tools).
 >
 > **Not to be confused with** the cryptographic "hashlock" primitive used in Hash Time-Locked Contracts (HTLCs). This package is the MCP server for the Hashlock Markets *trading protocol and product* at [hashlock.markets](https://hashlock.markets).
 >
@@ -73,21 +73,30 @@ Hashlock Markets uses SIWE (Sign-In With Ethereum) bearer tokens.
 
 | Tool | Description |
 |------|-------------|
-| `create_rfq` | Create a Request for Quote (RFQ) to buy or sell crypto OTC. Broadcasts to market makers for sealed-bid responses. |
-| `respond_rfq` | Market-maker side: submit a price quote in response to an open RFQ. |
+| `create_rfq` | Open a sealed-bid RFQ (optional Ghost Auction) for an OTC swap. Broadcasts to market makers. |
+| `respond_rfq` | Market-maker side: submit a sealed-bid price quote in response to an open RFQ. |
+| `list_open_rfqs` | List open (ACTIVE) RFQs awaiting market-maker quotes (read-only). |
+| `swap_quote` | One call: opens a sealed-bid Ghost Auction and returns a `swap_handle` + best bid so far. |
+| `swap_status` | Re-poll an open swap by its `swap_handle` — current best bid + bid count (read-only). |
+| `swap_execute` | Accept the winning sealed bid and create the trade. |
+| `swap_cancel` | Abort an open swap before it executes (cancels the underlying RFQ; no funds locked). |
 | `create_htlc` | Fund a Hash Time-Locked Contract for atomic OTC settlement (records on-chain lock tx hash). |
 | `withdraw_htlc` | Claim an HTLC by revealing the 32-byte preimage — settles the atomic swap. |
 | `refund_htlc` | Refund an expired HTLC after timelock — only the original sender, only post-deadline. |
-| `get_htlc` | Query current HTLC status for a trade (both sides, contract addresses, lock amounts, timelocks). |
+| `get_htlc` | Query per-leg HTLC settlement state for a trade (read-only). |
+| `list_supported_pairs` | List the chain-qualified token pairs Hashlock supports (read-only). |
+| `list_my_trades` | List your trades, active + historical (read-only) — resync state after context loss. |
+| `create_compute_capacity_listing` | Provider side: list a compute-capacity batch for sale (Sepolia / USDC; requires the `compute_trading` flag). |
+| `accept_compute_capacity_listing` | Buyer side: commit to purchase a listed compute-capacity batch (requires the `compute_trading` flag). |
 
-All tools support three chains: Ethereum (EVM), Bitcoin (wrapped HTLC), and SUI (Move HTLC).
+The HTLC settlement tools (`create_htlc`, `withdraw_htlc`, `refund_htlc`, `get_htlc`) work across three chains: Ethereum (EVM), Bitcoin (P2WSH HTLC), and Sui (Move HTLC). The compute-capacity tools are currently Sepolia / USDC only.
 
 ## Environment Variables
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `HASHLOCK_ACCESS_TOKEN` | Yes | — | 7-day SIWE JWT from [hashlock.markets/sign/login](https://hashlock.markets/sign/login) |
-| `HASHLOCK_ENDPOINT` | No | `https://hashlock.markets/api/graphql` | GraphQL endpoint override (rarely needed) |
+| `HASHLOCK_ENDPOINT` | No | `https://hashlock.markets/graphql` | GraphQL endpoint override (rarely needed) |
 
 ## Tool Examples
 

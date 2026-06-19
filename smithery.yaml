@@ -23,7 +23,7 @@ config:
       type: "string"
       title: "GraphQL endpoint"
       description: "Override the Hashlock GraphQL endpoint. Default is production."
-      default: "https://hashlock.markets/api/graphql"
+      default: "https://hashlock.markets/graphql"
 
 metadata:
   name: "Hashlock Markets"
@@ -33,9 +33,11 @@ metadata:
     chains — autonomous agents or institutional OTC desks — exchange
     value without trusting each other or a third party. Zero slippage,
     zero counterparty risk, non-custodial. BIS DvP-1 by construction.
-    ETH/BTC/SUI. MCP-native, retry-safe, signed receipts. 6 tools:
-    create_rfq, respond_rfq, create_htlc, withdraw_htlc, refund_htlc,
-    get_htlc.
+    ETH/BTC/SUI. MCP-native, retry-safe, signed receipts. 15 tools:
+    create_rfq, respond_rfq, list_open_rfqs, swap_quote, swap_status,
+    swap_execute, swap_cancel, create_htlc, withdraw_htlc, refund_htlc,
+    get_htlc, list_supported_pairs, list_my_trades,
+    create_compute_capacity_listing, accept_compute_capacity_listing.
   homepage: "https://hashlock.markets"
   repository: "https://github.com/Hashlock-Tech/hashlock-mcp"
   license: "MIT"

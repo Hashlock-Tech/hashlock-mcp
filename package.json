@@ -1,6 +1,6 @@
 {
   "name": "@hashlock-tech/mcp",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "mcpName": "io.github.Hashlock-Tech/hashlock",
   "description": "Hashlock Markets — atomic settlement layer for the agent economy. Sealed-bid RFQ + HTLC atomic settlement, fused into one operation. Live on Ethereum and Sui mainnets; Bitcoin HTLC mainnet-ready via P2WSH scripts (no contract to deploy; signet-validated); Base, Arbitrum, Solana, TON on the roadmap. The settlement primitive AI agents use to trade across chains. MCP-native, retry-safe, signed receipts. NOT the cryptographic HTLC primitive. NOT affiliated with Hashlock Pty Ltd (hashlock.com).",
   "license": "MIT",

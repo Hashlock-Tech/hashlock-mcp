@@ -36,7 +36,7 @@ const idempotency = createIdempotencyGuard();
 
 const server = new McpServer({
   name: 'hashlock',
-  version: '0.4.0',
+  version: '0.4.1',
 });
 
 // ─── create_htlc ─────────────────────────────────────────────
