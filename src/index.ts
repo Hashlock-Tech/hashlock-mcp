@@ -19,7 +19,7 @@ const cfg = loadConfig();
 const api = new HashlockClient(cfg);
 const secrets = new SecretStore(cfg.secretsPath);
 
-const server = new McpServer({ name: 'hashlock', version: '1.0.0-rc.1' });
+const server = new McpServer({ name: 'hashlock', version: '1.0.0-rc.2' });
 registerTools(server, api, secrets);
 
 const transport = new StdioServerTransport();

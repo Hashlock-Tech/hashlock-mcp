@@ -32,25 +32,32 @@ Local stdio via `npx` (Claude Desktop / Cursor / Windsurf `mcpServers` config):
       "command": "npx",
       "args": ["-y", "@hashlock-tech/mcp"],
       "env": {
-        "HASHLOCK_EVM_KEY": "0x<your agent's private key (TESTNET!)>"
+        "HASHLOCK_EVM_KEY": "0x<agent EVM key (TESTNET!)>",
+        "HASHLOCK_TRON_KEY": "<agent TRON key, 64-hex (optional)>",
+        "HASHLOCK_BTC_KEY": "<agent BTC WIF, signet (optional)>"
       }
     }
   }
 }
 ```
 
-## Auth — two modes
+## Auth — autonomous, per chain
 
-| Env var | Mode |
-|---|---|
-| `HASHLOCK_EVM_KEY` | **Autonomous agent**: a 0x private key; the server performs the SIWE login itself (nonce → sign → JWT) and re-logs-in on expiry. Use a dedicated **testnet** key. |
-| `HASHLOCK_TOKEN` | A ready JWT from an authenticated session. |
+The agent owns its key(s); the server does the login itself (nonce → sign → JWT, refreshed on expiry).
+The first configured key (EVM → TRON → BTC) mints the session; each key also signs settlement on its chain.
 
-With neither set, read-only tools (`list_assets`, `list_open_rfqs`, `get_rfq`) still work.
+| Env var | Chain | Login |
+|---|---|---|
+| `HASHLOCK_EVM_KEY` | EVM | SIWE `personal_sign` |
+| `HASHLOCK_TRON_KEY` | TRON | `signMessageV2` |
+| `HASHLOCK_BTC_KEY` | Bitcoin | BIP-322 |
+| `HASHLOCK_TOKEN` | — | a ready JWT (alternative to a key) |
 
-Other env: `HASHLOCK_API_URL` (default `https://dev.hashlock.markets/api`), `HASHLOCK_SECRETS_PATH` (default `~/.hashlock/mcp-secrets.json`, mode 0600).
+With none set, read-only tools (`list_assets`, `list_open_rfqs`, `get_rfq`) still work. Use dedicated **testnet** keys.
 
-## Tools (14)
+Other env: `HASHLOCK_API_URL` (default `https://dev.hashlock.markets/api`), `HASHLOCK_APP_URL` (share links; default derived), `HASHLOCK_EVM_RPC` (default a public Sepolia RPC), `HASHLOCK_TRON_HOST` (default Nile), `HASHLOCK_SECRETS_PATH` (default `~/.hashlock/mcp-secrets.json`, mode 0600).
+
+## Tools (16)
 
 | Tool | What it does |
 |---|---|
@@ -64,11 +71,20 @@ Other env: `HASHLOCK_API_URL` (default `https://dev.hashlock.markets/api`), `HAS
 | `my_rfqs`, `my_deals` | Your requests and deal threads |
 | `deal_status` | Thread + negotiation history + HTLC swap state |
 | `set_settlement_address` | Your receive/refund address per chain |
-| `get_deal_secret` | The locally-stored swap preimage (initiator only; sensitive) |
-| `reveal_claim` | Report your on-chain claim (secret + tx) so the other leg settles |
+| `get_deal_secret` | The locally-stored swap preimage (gated on both legs funded) |
+| `reveal_claim` | Report an out-of-band claim (secret + tx) so the other leg settles |
 | `whoami` | The account you're authenticated as |
+| **`fund_leg`** | **Autonomous:** fund your side of a swap on-chain with the agent's own key (EVM/TRON/BTC) |
+| **`claim_leg`** | **Autonomous:** claim your receive leg with the preimage (reveals the secret on-chain) |
 
 Amounts are **human decimal strings** ("0.5"); prices are the **total** quote-asset amount, not per-unit. Errors return a structured envelope `{ error: { code, is_retryable, recovery_hint } }` agents can branch on.
+
+## Fully autonomous loop
+
+With a key set for each chain a swap touches, an agent can run end to end with no human:
+`create_rfq`/`respond_to_rfq` → `negotiate` (accept) → `set_settlement_address` (both chains) →
+`fund_leg` → `claim_leg`. Funding/claiming is signed locally with the agent's keys; the swap secret is
+generated + stored locally and only its hashlock leaves the machine. Use dedicated testnet keys.
 
 ## How atomic settlement works
 

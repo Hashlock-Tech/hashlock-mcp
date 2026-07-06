@@ -8,23 +8,66 @@
     "source": "github",
     "id": "1206275989"
   },
-  "version": "1.0.0-rc.1",
+  "version": "1.0.0-rc.2",
   "websiteUrl": "https://hashlock.markets",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@hashlock-tech/mcp",
-      "version": "1.0.0-rc.1",
+      "version": "1.0.0-rc.2",
       "runtimeHint": "npx",
-      "transport": { "type": "stdio" },
+      "transport": {
+        "type": "stdio"
+      },
       "runtimeArguments": [
-        { "description": "Auto-confirm npx install prompt", "isRequired": true, "value": "-y", "type": "positional" }
+        {
+          "description": "Auto-confirm npx install prompt",
+          "isRequired": true,
+          "value": "-y",
+          "type": "positional"
+        }
       ],
       "environmentVariables": [
-        { "description": "0x private key for autonomous SIWE login (use a dedicated TESTNET key)", "isRequired": false, "isSecret": true, "name": "HASHLOCK_EVM_KEY" },
-        { "description": "A ready JWT (alternative to HASHLOCK_EVM_KEY)", "isRequired": false, "isSecret": true, "name": "HASHLOCK_TOKEN" },
-        { "description": "REST API endpoint override", "default": "https://dev.hashlock.markets/api", "name": "HASHLOCK_API_URL" }
+        {
+          "description": "EVM private key (0x, 32-byte) for autonomous SIWE login + EVM settlement \u2014 dedicated TESTNET key",
+          "isRequired": false,
+          "isSecret": true,
+          "name": "HASHLOCK_EVM_KEY"
+        },
+        {
+          "description": "TRON private key (64-hex) for autonomous login + TRON settlement",
+          "isRequired": false,
+          "isSecret": true,
+          "name": "HASHLOCK_TRON_KEY"
+        },
+        {
+          "description": "Bitcoin WIF (signet) for autonomous BIP-322 login + BTC HTLC claims",
+          "isRequired": false,
+          "isSecret": true,
+          "name": "HASHLOCK_BTC_KEY"
+        },
+        {
+          "description": "A ready JWT (alternative to a key)",
+          "isRequired": false,
+          "isSecret": true,
+          "name": "HASHLOCK_TOKEN"
+        },
+        {
+          "description": "REST API endpoint override",
+          "default": "https://dev.hashlock.markets/api",
+          "name": "HASHLOCK_API_URL"
+        },
+        {
+          "description": "EVM RPC the agent submits fund/claim through",
+          "default": "https://ethereum-sepolia-rpc.publicnode.com",
+          "name": "HASHLOCK_EVM_RPC"
+        },
+        {
+          "description": "TRON full host",
+          "default": "https://nile.trongrid.io",
+          "name": "HASHLOCK_TRON_HOST"
+        }
       ]
     }
   ]

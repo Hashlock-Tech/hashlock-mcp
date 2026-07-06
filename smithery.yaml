@@ -17,10 +17,18 @@ config:
       description: >-
         0x private key for autonomous SIWE login — the server signs the login
         itself and re-authenticates on expiry. Use a dedicated TESTNET key.
+    HASHLOCK_TRON_KEY:
+      type: "string"
+      title: "Agent TRON private key (testnet)"
+      description: "64-hex TRON key for autonomous signMessageV2 login + TRON settlement."
+    HASHLOCK_BTC_KEY:
+      type: "string"
+      title: "Agent BTC WIF (signet)"
+      description: "Bitcoin WIF for autonomous BIP-322 login + BTC HTLC claims."
     HASHLOCK_TOKEN:
       type: "string"
       title: "Hashlock JWT"
-      description: "A ready JWT (alternative to HASHLOCK_EVM_KEY)."
+      description: "A ready JWT (alternative to a key)."
     HASHLOCK_API_URL:
       type: "string"
       title: "REST API endpoint"
@@ -34,10 +42,10 @@ metadata:
     sealed RFQ + price negotiation + HTLC atomic settlement — both legs settle
     or both refund; no bridge, no custodian, no counterparty risk. BTC ↔ EVM /
     TRON. TESTNETS ONLY for now (Ethereum Sepolia, TRON Nile, Bitcoin signet).
-    Autonomous-agent ready: SIWE login with the agent's own key; swap secrets
-    generated locally. 14 tools: list_assets, list_open_rfqs, get_rfq,
+    Autonomous-agent ready: EVM/TRON/BTC login with the agent's own keys +
+    on-chain fund/claim; swap secrets generated locally. 16 tools: list_assets, list_open_rfqs, get_rfq,
     create_rfq, cancel_rfq, respond_to_rfq, negotiate, my_rfqs, my_deals,
-    deal_status, set_settlement_address, get_deal_secret, reveal_claim, whoami.
+    deal_status, set_settlement_address, get_deal_secret, reveal_claim, whoami, fund_leg, claim_leg (autonomous on-chain settlement, EVM/TRON/BTC).
   homepage: "https://hashlock.markets"
   repository: "https://github.com/Hashlock-Tech/hashlock-mcp"
   license: "MIT"

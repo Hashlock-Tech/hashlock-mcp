@@ -1,5 +1,15 @@
-import { privateKeyToAccount } from 'viem/accounts';
+import { BtcSigner, type BtcChain } from './chains/btc.js';
+import { EvmSigner, type EvmChain } from './chains/evm.js';
+import { TronSigner, type TronChain } from './chains/tron.js';
 import type { Config } from './config.js';
+
+/** Chain params from GET /config — what the signers need to build fund/claim txs. */
+export interface ChainConfig {
+  fee: { bps: number; payer: string };
+  evm: { chainId: number | null; factory: string | null; rpcUrl?: string | null };
+  tron: { sharedHtlc: string | null; fullHost?: string | null };
+  btc: { network: string; esplora: string | null; treasury: string | null };
+}
 
 /**
  * Thin typed client for the Hashlock Markets REST API.
@@ -15,6 +25,8 @@ export interface Asset {
   name: string | null;
   chain: string;
   decimals: number;
+  address: string | null; // null => native coin
+  isNative?: boolean;
 }
 export interface Rfq {
   id: string;
@@ -52,14 +64,52 @@ export interface Message {
   amount: string | null;
   createdAt: string;
 }
+export interface SwapLeg {
+  assetId: string;
+  chain: string;
+  amount: string;
+  timelock: string;
+  payoutAddress: string | null;
+  refundAddress: string | null;
+  htlcAddress: string | null;
+  redeemScript: string | null;
+  fundTx: string | null;
+  claimTx: string | null;
+}
 export interface Swap {
   id: string;
   threadId: string;
   makerId: string;
   takerId: string;
+  initiatorUserId: string;
   status: string;
   hashlock: string;
-  initiatorRole: 'maker' | 'taker';
+  secretCiphertext: string | null;
+  onchainSwapId: string | null;
+  feePayerId: string | null;
+  feeAssetId: string | null;
+  feeAmount: string;
+  // Leg A (maker gives) / Leg B (maker wants) — flat columns in the DB row.
+  aAssetId: string;
+  aChain: string;
+  aAmount: string;
+  aTimelock: string;
+  aPayoutAddress: string | null;
+  aRefundAddress: string | null;
+  aHtlcAddress: string | null;
+  aRedeemScript: string | null;
+  aFundTx: string | null;
+  aClaimTx: string | null;
+  bAssetId: string;
+  bChain: string;
+  bAmount: string;
+  bTimelock: string;
+  bPayoutAddress: string | null;
+  bRefundAddress: string | null;
+  bHtlcAddress: string | null;
+  bRedeemScript: string | null;
+  bFundTx: string | null;
+  bClaimTx: string | null;
   [k: string]: unknown;
 }
 export interface User {
@@ -87,6 +137,11 @@ export class HashlockClient {
     this.token = cfg.token;
   }
 
+  /** User-facing app base (for shareable order/deal links). */
+  get appUrl(): string {
+    return this.cfg.appUrl;
+  }
+
   // ── transport ───────────────────────────────────────────────────────────────
   private async req<T>(
     path: string,
@@ -102,8 +157,8 @@ export class HashlockClient {
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
-    if (res.status === 401 && this.cfg.evmKey && !opts.retried) {
-      this.token = undefined; // expired JWT → one fresh SIWE login, then retry
+    if (res.status === 401 && this.hasKey && !opts.retried) {
+      this.token = undefined; // expired JWT → one fresh login, then retry
       return this.req(path, { ...opts, retried: true });
     }
     const json = (await res.json().catch(() => null)) as Record<string, unknown> | null;
@@ -113,22 +168,95 @@ export class HashlockClient {
     return json as T;
   }
 
-  /** Autonomous SIWE login with the configured private key. */
+  // ── autonomous signers (lazy, from the configured key per family) ────────────
+  private _evm: EvmSigner | null = null;
+  private _tron: TronSigner | null = null;
+  private _btc: BtcSigner | null = null;
+  private chainCfg: ChainConfig | null = null;
+
+  private get hasKey(): boolean {
+    return !!(this.cfg.evmKey || this.cfg.tronKey || this.cfg.btcKey);
+  }
+  evmSigner(): EvmSigner {
+    if (!this.cfg.evmKey) throw new Error('HASHLOCK_EVM_KEY not set');
+    return (this._evm ??= new EvmSigner(this.cfg.evmKey));
+  }
+  tronSigner(): TronSigner {
+    if (!this.cfg.tronKey) throw new Error('HASHLOCK_TRON_KEY not set');
+    return (this._tron ??= new TronSigner(this.cfg.tronKey));
+  }
+  async btcSigner(): Promise<BtcSigner> {
+    if (!this.cfg.btcKey) throw new Error('HASHLOCK_BTC_KEY not set');
+    if (!this._btc) {
+      const cc = await this.chainConfig();
+      this._btc = new BtcSigner(this.cfg.btcKey, cc.btc.network);
+    }
+    return this._btc;
+  }
+
+  /** GET /config (chain params), cached. RPC/host come from local env (not exposed by the API). */
+  async chainConfig(): Promise<ChainConfig> {
+    if (!this.chainCfg) {
+      const raw = await this.req<ChainConfig>('/config', { auth: false });
+      this.chainCfg = raw;
+    }
+    return this.chainCfg;
+  }
+  async evmChain(): Promise<EvmChain> {
+    const cc = await this.chainConfig();
+    if (!cc.evm.factory || cc.evm.chainId == null) throw new Error('EVM settlement not configured on this API');
+    return { rpcUrl: this.cfg.evmRpc, chainId: cc.evm.chainId, factory: cc.evm.factory as `0x${string}` };
+  }
+  async tronChain(): Promise<TronChain> {
+    const cc = await this.chainConfig();
+    if (!cc.tron.sharedHtlc) throw new Error('TRON settlement not configured on this API');
+    return { fullHost: this.cfg.tronHost, sharedHtlc: cc.tron.sharedHtlc };
+  }
+  async btcChain(): Promise<BtcChain> {
+    const cc = await this.chainConfig();
+    if (!cc.btc.esplora) throw new Error('BTC settlement not configured on this API');
+    return { network: cc.btc.network, esplora: cc.btc.esplora, treasury: cc.btc.treasury };
+  }
+
+  /**
+   * Autonomous login. Picks the first configured key (EVM → TRON → BTC), signs a domain-bound nonce
+   * message, and exchanges it for a session JWT via the matching verify endpoint.
+   */
   private async login(): Promise<void> {
-    if (!this.cfg.evmKey) {
+    if (!this.hasKey) {
       throw new ApiError(
-        'unauthorized — set HASHLOCK_TOKEN (a JWT) or HASHLOCK_EVM_KEY (0x private key for autonomous SIWE login)',
+        'unauthorized — set HASHLOCK_TOKEN, or a key for autonomous login: HASHLOCK_EVM_KEY / HASHLOCK_TRON_KEY / HASHLOCK_BTC_KEY',
         401,
       );
     }
-    const account = privateKeyToAccount(this.cfg.evmKey);
     const { nonce } = await this.req<{ nonce: string }>('/auth/siwe/nonce', { auth: false });
-    const message = `Hashlock Markets wants you to sign in.\n\nAddress: ${account.address}\nNonce: ${nonce}\nIssued At: ${new Date().toISOString()}`;
-    const signature = await account.signMessage({ message });
-    const res = await this.req<{ token: string; user: User }>('/auth/siwe/verify', {
-      auth: false,
-      body: { address: account.address, message, signature },
-    });
+    const stamp = new Date().toISOString();
+    let path: string;
+    let address: string;
+    let message: string;
+    let signature: string;
+
+    if (this.cfg.evmKey) {
+      const s = this.evmSigner();
+      address = s.address;
+      message = `Hashlock Markets wants you to sign in.\n\nAddress: ${address}\nNonce: ${nonce}\nIssued At: ${stamp}`;
+      signature = await s.signLoginMessage(message);
+      path = '/auth/siwe/verify';
+    } else if (this.cfg.tronKey) {
+      const s = this.tronSigner();
+      address = s.address;
+      message = `Hashlock Markets wants you to sign in.\n\nAddress: ${address}\nNonce: ${nonce}\nIssued At: ${stamp}`;
+      signature = await s.signLoginMessage(message, await this.tronChain());
+      path = '/auth/tron/verify';
+    } else {
+      const s = await this.btcSigner();
+      address = s.address;
+      message = `Hashlock Markets — sign in.\n\nAddress: ${address}\nNonce: ${nonce}\nIssued At: ${stamp}`;
+      signature = s.signLoginMessage(message);
+      path = '/auth/btc/verify';
+    }
+
+    const res = await this.req<{ token: string; user: User }>(path, { auth: false, body: { address, message, signature } });
     this.token = res.token;
   }
 

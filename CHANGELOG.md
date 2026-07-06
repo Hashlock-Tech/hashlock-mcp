@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.0.0-rc.2] - 2026-07-07
+
+### Added — full multi-chain autonomy
+- **Autonomous login on all three chains**: `HASHLOCK_TRON_KEY` (signMessageV2) and `HASHLOCK_BTC_KEY`
+  (BIP-322 via bip322-js) alongside `HASHLOCK_EVM_KEY` (SIWE). The first configured key mints the
+  session; each also signs settlement on its chain. Live-verified TRON + BTC login against dev.
+- **On-chain settlement tools** `fund_leg` and `claim_leg`: the agent funds its side and claims its
+  receive leg with its own keys — EVM (viem: approve + HTLCFactory.createSwap / clone.claim), TRON
+  (TronWeb: SharedHTLC.fund/claim), BTC (bitcoinjs-lib: pay P2WSH / claim with witness
+  [sig, preimage, 0x01, redeemScript] via Esplora). Chain params come from GET /config; RPC/host from env.
+- **Config-driven URLs**: `HASHLOCK_APP_URL` (share links), `HASHLOCK_EVM_RPC`, `HASHLOCK_TRON_HOST` —
+  no hardcoded dev domain.
+
+
 ## [1.0.0-rc.1] - 2026-07-06
 
 ### Changed — ground-up rebuild against the new Hashlock Markets platform

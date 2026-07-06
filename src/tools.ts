@@ -4,6 +4,7 @@ import { fromBaseUnits, toBaseUnits, type Asset, type HashlockClient, type Rfq, 
 import { wrapTool } from './lib/errors.js';
 import { okContent } from './lib/result.js';
 import type { SecretStore } from './secrets.js';
+import { claimMyLeg, fundMyLeg } from './settlement.js';
 
 /**
  * MCP tools over the Hashlock Markets OTC flow: browse the board → create/respond to an RFQ →
@@ -124,7 +125,7 @@ export function registerTools(server: McpServer, api: HashlockClient, secrets: S
       const described = await describeRfq(rfq);
       return okContent(
         a.visibility === 'private'
-          ? { ...described, share_link: `https://dev.hashlock.markets/app/order/${rfq.id}` }
+          ? { ...described, share_link: `${api.appUrl}/order/${rfq.id}` }
           : described,
       );
     }),
@@ -291,5 +292,29 @@ export function registerTools(server: McpServer, api: HashlockClient, secrets: S
     'The account you are authenticated as (linked wallet addresses). Useful to verify auth before trading.',
     {},
     wrapTool(async () => okContent((await api.me()).user)),
+  );
+
+  // ── autonomous settlement (signs with the agent's own keys) ──────────────────
+  server.tool(
+    'fund_leg',
+    'AUTONOMOUS SETTLEMENT: fund YOUR side of an agreed swap on-chain, signing with the agent\'s own key (HASHLOCK_EVM_KEY / TRON / BTC for that leg\'s chain). Funds the leg you give — approves the token (EVM/TRON) and locks it in the HTLC, or pays the P2WSH (BTC). Prerequisites: the deal is agreed and BOTH parties have set their settlement addresses (set_settlement_address). Returns the on-chain tx id. Fund your long leg first if you are the initiator.',
+    { swap_id: z.string().uuid() },
+    wrapTool(async ({ swap_id }) => {
+      const { swap } = await api.getSwap(swap_id);
+      const assets = await api.assets();
+      const res = await fundMyLeg(api, swap, assets);
+      return okContent({ ...res, note: 'On-chain funding submitted; the watcher will advance the swap.' });
+    }),
+  );
+
+  server.tool(
+    'claim_leg',
+    'AUTONOMOUS SETTLEMENT: claim YOUR receive leg of a swap using the preimage, signing with the agent\'s own key. This reveals the secret on-chain (so the counterparty/keeper can settle the other leg) and reports the claim to the API. Requires both legs funded and the preimage available (you are the initiator, or the initiator already revealed it). Returns the on-chain tx id.',
+    { swap_id: z.string().uuid() },
+    wrapTool(async ({ swap_id }) => {
+      const { swap } = await api.getSwap(swap_id);
+      const res = await claimMyLeg(api, swap, secrets);
+      return okContent({ ...res, note: 'Claim broadcast; preimage revealed on-chain and reported to the API.' });
+    }),
   );
 }
