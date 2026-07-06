@@ -2,11 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { classifyError, wrapTool } from '../lib/errors.js';
 
 describe('classifyError', () => {
-  it('maps GraphQL field-validation / not-found language to TRADE_NOT_FOUND', () => {
+  it('maps GraphQL field-validation / not-found language to NOT_FOUND', () => {
     const c = classifyError(new Error('No trade found for tradeId xyz'));
-    expect(c.code).toBe('TRADE_NOT_FOUND');
+    expect(c.code).toBe('NOT_FOUND');
     expect(c.is_retryable).toBe(false);
-    expect(c.recovery_hint).toMatch(/list_my_trades|verify the tradeId/i);
+    expect(c.recovery_hint).toMatch(/my_rfqs|my_deals|verify the id/i);
   });
 
   it('maps Unauthorized to UNAUTHORIZED', () => {
@@ -70,7 +70,7 @@ describe('wrapTool', () => {
     const wrapped = wrapTool(async () => { throw new Error('No trade found for tradeId zzz'); });
     const out = await wrapped();
     const payload = JSON.parse(out.content[0].text);
-    expect(payload.error.code).toBe('TRADE_NOT_FOUND');
+    expect(payload.error.code).toBe('NOT_FOUND');
     expect(payload.error.is_retryable).toBe(false);
     expect(typeof payload.error.recovery_hint).toBe('string');
     expect(payload.error.message).toContain('No trade found');
@@ -88,7 +88,7 @@ describe('wrapTool', () => {
 describe('non-Error object throwables', () => {
   it('classifyError extracts .message from a plain object (not [object Object])', () => {
     const c = classifyError({ message: 'No trade found for tradeId q' });
-    expect(c.code).toBe('TRADE_NOT_FOUND');
+    expect(c.code).toBe('NOT_FOUND');
   });
 
   it('wrapTool preserves .message from a thrown plain object', async () => {

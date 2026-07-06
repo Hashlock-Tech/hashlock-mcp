@@ -1,43 +1,29 @@
 # @hashlock-tech/mcp
 
-> **Hashlock Markets** — the atomic settlement layer for the agent economy. HTLC-based atomic settlement: live on Ethereum and Sui mainnets, with Bitcoin mainnet-ready via P2WSH HTLC scripts (no contract to deploy; signet-validated). No bridges, no custodians, no trust assumptions. Sealed-bid RFQ + HTLC fused into one atomic operation. The settlement primitive AI agents use to trade across chains. MCP-native (15 tools).
+> **Hashlock Markets** — the settlement layer for the agent economy, as MCP tools. Non-custodial cross-chain OTC: sealed RFQ + price negotiation + **HTLC atomic settlement** — both legs settle or both refund; no bridge, no custodian, no counterparty risk. BTC ↔ EVM / TRON.
 >
-> **Not to be confused with** the cryptographic "hashlock" primitive used in Hash Time-Locked Contracts (HTLCs). This package is the MCP server for the Hashlock Markets *trading protocol and product* at [hashlock.markets](https://hashlock.markets).
+> ⚠️ **Testnets only for now** (Ethereum Sepolia · TRON Nile · Bitcoin signet). Mainnet comes after the security-hardening gate — do not send real funds.
 >
-> **Not affiliated with Hashlock Pty Ltd** (hashlock.com), an independent Australian smart contract auditing firm. The two organizations share a similar name by coincidence only — distinct products, legal entities, jurisdictions, and founders.
+> **Not to be confused with** the cryptographic "hashlock" primitive used in HTLCs, and **not affiliated with Hashlock Pty Ltd** (hashlock.com), an independent smart-contract auditing firm — similar name by coincidence only.
 
 [![npm](https://img.shields.io/npm/v/@hashlock-tech/mcp.svg)](https://www.npmjs.com/package/@hashlock-tech/mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![MCP Registry](https://img.shields.io/badge/MCP%20Registry-io.github.Hashlock--Tech%2Fhashlock-green)](https://registry.modelcontextprotocol.io)
-[![smithery badge](https://smithery.ai/badge/bsozen-4wm5/hashlock-otc-v1)](https://smithery.ai/servers/bsozen-4wm5/hashlock-otc-v1)
 
 ## What is this?
 
-`@hashlock-tech/mcp` is the canonical [Model Context Protocol](https://modelcontextprotocol.io) server for **Hashlock Markets** — the atomic settlement layer for the agent economy. It lets AI agents (Claude, GPT, Cursor, Windsurf, any MCP-compatible client) create RFQs, respond as a market maker, fund HTLCs, and settle cross-chain atomic swaps on Ethereum and Sui mainnets, with Bitcoin mainnet-ready via P2WSH HTLC scripts (no contract to deploy; signet-validated). Expanding to Base, Arbitrum, Solana, TON. No bridges, no custodians, no trust assumptions.
+The canonical [Model Context Protocol](https://modelcontextprotocol.io) server for **Hashlock Markets**. It gives AI agents (Claude, Cursor, Windsurf, any MCP client) the full OTC trading loop:
 
-Hashlock Markets features 5 industry-first primitives: BTC Collateral Vaults (Sui-native via Hashi), Forward OTC Settlement (T+24h/T+48h), Verified Counterparty Directory, Multi-leg Trade Atomicity, and Execution Rewards with Tiered KYC. Three interaction modes: AI ↔ AI, AI ↔ Human, Human ↔ Human.
+1. **Browse** the asset registry and the public RFQ board
+2. **Post** a public RFQ or a private fixed-price order (shareable link)
+3. **Respond** to requests with a price; **negotiate** (counter / accept / decline) in the deal thread
+4. **Agree** — both parties accept → an HTLC swap is created
+5. **Track settlement** — who funded, timelocks, tx hashes — and manage receive/refund addresses
+
+Settlement **signing** (funding and claiming the HTLCs) stays with your own wallet — the server never holds keys or funds. The swap **secret is generated locally** on your machine and only its `sha256` hashlock is sent; retrieve it with `get_deal_secret` when it's time to claim.
 
 ## Install
 
-### Option A (preferred) — Remote streamable-http
-
-Connect Claude Desktop / Cursor / Windsurf directly to the Hashlock Markets MCP endpoint. No local install.
-
-```json
-{
-  "mcpServers": {
-    "hashlock": {
-      "url": "https://hashlock.markets/mcp",
-      "transport": "streamable-http",
-      "headers": {
-        "Authorization": "Bearer <token from hashlock.markets/sign/login>"
-      }
-    }
-  }
-}
-```
-
-### Option B — Local stdio via npx
+Local stdio via `npx` (Claude Desktop / Cursor / Windsurf `mcpServers` config):
 
 ```json
 {
@@ -46,122 +32,55 @@ Connect Claude Desktop / Cursor / Windsurf directly to the Hashlock Markets MCP 
       "command": "npx",
       "args": ["-y", "@hashlock-tech/mcp"],
       "env": {
-        "HASHLOCK_ACCESS_TOKEN": "<token from hashlock.markets/sign/login>"
+        "HASHLOCK_EVM_KEY": "0x<your agent's private key (TESTNET!)>"
       }
     }
   }
 }
 ```
 
-**Config file location:**
-- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+## Auth — two modes
 
-Restart your client after editing.
+| Env var | Mode |
+|---|---|
+| `HASHLOCK_EVM_KEY` | **Autonomous agent**: a 0x private key; the server performs the SIWE login itself (nonce → sign → JWT) and re-logs-in on expiry. Use a dedicated **testnet** key. |
+| `HASHLOCK_TOKEN` | A ready JWT from an authenticated session. |
 
-## Authentication
+With neither set, read-only tools (`list_assets`, `list_open_rfqs`, `get_rfq`) still work.
 
-Hashlock Markets uses SIWE (Sign-In With Ethereum) bearer tokens.
+Other env: `HASHLOCK_API_URL` (default `https://dev.hashlock.markets/api`), `HASHLOCK_SECRETS_PATH` (default `~/.hashlock/mcp-secrets.json`, mode 0600).
 
-1. Visit [hashlock.markets/sign/login](https://hashlock.markets/sign/login)
-2. Sign a message with your Ethereum wallet
-3. Receive a **7-day JWT**
-4. Set it as `HASHLOCK_ACCESS_TOKEN` (stdio) or `Authorization: Bearer <token>` header (remote)
-5. Re-sign after expiry
+## Tools (14)
 
-## Available Tools
+| Tool | What it does |
+|---|---|
+| `list_assets` | Asset registry (`SYMBOL@chain` refs, decimals) |
+| `list_open_rfqs` | Public RFQ board, filterable |
+| `get_rfq` | One RFQ / private order |
+| `create_rfq` | Post a public RFQ or private fixed-price order |
+| `cancel_rfq` | Cancel your own request |
+| `respond_to_rfq` | Respond with a price → opens a deal thread |
+| `negotiate` | `message` / `propose` / `accept_proposal` / `accept` / `reject` |
+| `my_rfqs`, `my_deals` | Your requests and deal threads |
+| `deal_status` | Thread + negotiation history + HTLC swap state |
+| `set_settlement_address` | Your receive/refund address per chain |
+| `get_deal_secret` | The locally-stored swap preimage (initiator only; sensitive) |
+| `reveal_claim` | Report your on-chain claim (secret + tx) so the other leg settles |
+| `whoami` | The account you're authenticated as |
 
-| Tool | Description |
-|------|-------------|
-| `create_rfq` | Open a sealed-bid RFQ (optional Ghost Auction) for an OTC swap. Broadcasts to market makers. |
-| `respond_rfq` | Market-maker side: submit a sealed-bid price quote in response to an open RFQ. |
-| `list_open_rfqs` | List open (ACTIVE) RFQs awaiting market-maker quotes (read-only). |
-| `swap_quote` | One call: opens a sealed-bid Ghost Auction and returns a `swap_handle` + best bid so far. |
-| `swap_status` | Re-poll an open swap by its `swap_handle` — current best bid + bid count (read-only). |
-| `swap_execute` | Accept the winning sealed bid and create the trade. |
-| `swap_cancel` | Abort an open swap before it executes (cancels the underlying RFQ; no funds locked). |
-| `create_htlc` | Fund a Hash Time-Locked Contract for atomic OTC settlement (records on-chain lock tx hash). |
-| `withdraw_htlc` | Claim an HTLC by revealing the 32-byte preimage — settles the atomic swap. |
-| `refund_htlc` | Refund an expired HTLC after timelock — only the original sender, only post-deadline. |
-| `get_htlc` | Query per-leg HTLC settlement state for a trade (read-only). |
-| `list_supported_pairs` | List the chain-qualified token pairs Hashlock supports (read-only). |
-| `list_my_trades` | List your trades, active + historical (read-only) — resync state after context loss. |
-| `create_compute_capacity_listing` | Provider side: list a compute-capacity batch for sale (Sepolia / USDC; requires the `compute_trading` flag). |
-| `accept_compute_capacity_listing` | Buyer side: commit to purchase a listed compute-capacity batch (requires the `compute_trading` flag). |
+Amounts are **human decimal strings** ("0.5"); prices are the **total** quote-asset amount, not per-unit. Errors return a structured envelope `{ error: { code, is_retryable, recovery_hint } }` agents can branch on.
 
-The HTLC settlement tools (`create_htlc`, `withdraw_htlc`, `refund_htlc`, `get_htlc`) work across three chains: Ethereum (EVM), Bitcoin (P2WSH HTLC), and Sui (Move HTLC). The compute-capacity tools are currently Sepolia / USDC only.
+## How atomic settlement works
 
-## Environment Variables
+Both parties lock funds in HTLCs bound to the same `sha256(secret)` hashlock — BTC as a P2WSH script, EVM/TRON as contracts. The initiator funds the **long-timelock** leg first (asymmetric timelocks, so nobody gets a free option). Claiming one leg reveals the secret on-chain, which unlocks the other leg. Either both legs settle, or both refund after their timelocks. The recipient of each leg is fixed at funding time — revealing the secret cannot redirect funds.
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `HASHLOCK_ACCESS_TOKEN` | Yes | — | 7-day SIWE JWT from [hashlock.markets/sign/login](https://hashlock.markets/sign/login) |
-| `HASHLOCK_ENDPOINT` | No | `https://hashlock.markets/graphql` | GraphQL endpoint override (rarely needed) |
+## Development
 
-## Tool Examples
-
-### Create an RFQ
-
-> "Create an RFQ to sell 2 ETH for USDT"
-
-```
-Tool: create_rfq
-Input: { baseToken: "ETH", quoteToken: "USDT", side: "SELL", amount: "2.0" }
-Output: { rfqId, broadcast status }
+```sh
+pnpm install
+pnpm run build    # tsup → dist/
+pnpm run lint     # tsc --noEmit
+pnpm test         # vitest
 ```
 
-### Respond to an RFQ
-
-> "Quote 3400 USDT per ETH on RFQ abc-123"
-
-```
-Tool: respond_rfq
-Input: { rfqId: "abc-123", price: "3400.00", amount: "2.0" }
-```
-
-### Check HTLC Status
-
-> "What's the HTLC status for trade xyz-789?"
-
-```
-Tool: get_htlc
-Input: { tradeId: "xyz-789" }
-```
-
-### Fund an HTLC
-
-> "Record my ETH lock transaction for trade xyz-789"
-
-```
-Tool: create_htlc
-Input: { tradeId: "xyz-789", txHash: "0xabc...", role: "INITIATOR", chainType: "evm" }
-```
-
-### Claim with Preimage
-
-> "Claim the HTLC using the preimage"
-
-```
-Tool: withdraw_htlc
-Input: { tradeId: "xyz-789", txHash: "0xdef...", preimage: "0x1234..." }
-```
-
-## Deprecated legacy packages
-
-Do **not** use these — they depended on an intent REST API that was never shipped, and are superseded by `@hashlock-tech/mcp`:
-
-- `hashlock-mcp-server` (unscoped, npm) — deprecated 2026-04-19
-- `langchain-hashlock` (PyPI) — superseded for MCP-based integrations
-
-## Links
-
-- **Website**: [hashlock.markets](https://hashlock.markets)
-- **MCP Endpoint (remote)**: [hashlock.markets/mcp](https://hashlock.markets/mcp)
-- **SIWE Login**: [hashlock.markets/sign/login](https://hashlock.markets/sign/login)
-
-## Architecture
-
-How this server is structured, the six tools, the `create_rfq` intent compiler, and how it
-connects to the Hashlock Markets backend (and the `@hashlock-tech/sdk` it wraps):
-[`docs/architecture/ARCHITECTURE.md`](./docs/architecture/ARCHITECTURE.md)
-· [Русский](./docs/architecture/ARCHITECTURE.ru.md).
+Node ≥ 20. MIT.

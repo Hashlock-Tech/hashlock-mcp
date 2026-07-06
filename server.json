@@ -1,38 +1,30 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.Hashlock-Tech/hashlock",
-  "description": "Sealed-bid OTC trading with HTLC atomic settlement. ETH, BTC, SUI. Built for AI agents.",
+  "description": "Non-custodial cross-chain OTC for AI agents: sealed RFQ + negotiation + HTLC atomic settlement (BTC/EVM/TRON). Testnets only until the hardening gate.",
   "title": "Hashlock Markets",
   "repository": {
     "url": "https://github.com/Hashlock-Tech/hashlock-mcp",
     "source": "github",
     "id": "1206275989"
   },
-  "version": "1.4.1",
+  "version": "1.0.0-rc.1",
   "websiteUrl": "https://hashlock.markets",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@hashlock-tech/mcp",
-      "version": "0.4.1",
+      "version": "1.0.0-rc.1",
       "runtimeHint": "npx",
       "transport": { "type": "stdio" },
       "runtimeArguments": [
         { "description": "Auto-confirm npx install prompt", "isRequired": true, "value": "-y", "type": "positional" }
       ],
       "environmentVariables": [
-        { "description": "SIWE JWT from hashlock.markets/sign/login", "isRequired": true, "isSecret": true, "name": "HASHLOCK_ACCESS_TOKEN" },
-        { "description": "GraphQL endpoint override", "default": "https://hashlock.markets/graphql", "name": "HASHLOCK_ENDPOINT" }
-      ]
-    }
-  ],
-  "remotes": [
-    {
-      "type": "streamable-http",
-      "url": "https://hashlock.markets/mcp",
-      "headers": [
-        { "description": "SIWE bearer token from hashlock.markets/sign/login", "isRequired": true, "isSecret": true, "name": "Authorization" }
+        { "description": "0x private key for autonomous SIWE login (use a dedicated TESTNET key)", "isRequired": false, "isSecret": true, "name": "HASHLOCK_EVM_KEY" },
+        { "description": "A ready JWT (alternative to HASHLOCK_EVM_KEY)", "isRequired": false, "isSecret": true, "name": "HASHLOCK_TOKEN" },
+        { "description": "REST API endpoint override", "default": "https://dev.hashlock.markets/api", "name": "HASHLOCK_API_URL" }
       ]
     }
   ]
