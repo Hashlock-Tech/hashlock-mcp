@@ -19,19 +19,21 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4 — reads the version from packageManager
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
+          cache: pnpm
       - name: Verify tag matches package.json version
         run: |
           TAG="${GITHUB_REF_NAME#v}"
           PKG="$(node -p "require('./package.json').version")"
           echo "tag=$TAG package.json=$PKG"
           [ "$TAG" = "$PKG" ] || { echo "::error::tag $GITHUB_REF_NAME does not match package.json version $PKG"; exit 1; }
-      - run: npm install
-      - run: npm run build
-      - run: npm test
-      - run: npm pack # → *.tgz
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test
+      - run: pnpm pack # → *.tgz
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: npm-package
@@ -52,7 +54,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           # Node whose bundled npm (11.16.0) already satisfies OIDC trusted publishing (>= 11.5.1) — no
-          # registry-supplied `npm install -g` runs in the privileged job.
+          # registry-supplied `npm install -g` runs in the privileged job. npm publishes the prebuilt tarball.
           node-version: 24.18.0
           registry-url: https://registry.npmjs.org
       - run: npm publish *.tgz --provenance --access public
