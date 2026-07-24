@@ -1,6 +1,6 @@
 {
   "name": "@hashlock-tech/mcp",
-  "version": "1.0.0-rc.2",
+  "version": "0.5.0",
   "mcpName": "io.github.Hashlock-Tech/hashlock",
   "description": "Hashlock Markets \u2014 the settlement layer for the agent economy, as MCP tools. Non-custodial cross-chain OTC: sealed RFQ + price negotiation + HTLC atomic settlement (both legs settle or both refund; no custodian). BTC \u2194 EVM / TRON. TESTNETS ONLY for now (Ethereum Sepolia, TRON Nile, Bitcoin signet) \u2014 mainnet after the security-hardening gate. Autonomous-agent ready: SIWE login with the agent's own key, swap secrets generated locally. NOT affiliated with Hashlock Pty Ltd (hashlock.com).",
   "license": "MIT",
