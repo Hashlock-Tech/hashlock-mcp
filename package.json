@@ -1,8 +1,8 @@
 {
   "name": "@hashlock-tech/mcp",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "mcpName": "io.github.Hashlock-Tech/hashlock",
-  "description": "Hashlock Markets — atomic settlement layer for the agent economy. Sealed-bid RFQ + HTLC atomic settlement, fused into one operation. Live on Ethereum and Sui mainnets; Bitcoin HTLC mainnet-ready via P2WSH scripts (no contract to deploy; signet-validated); Base, Arbitrum, Solana, TON on the roadmap. The settlement primitive AI agents use to trade across chains. MCP-native, retry-safe, signed receipts. NOT the cryptographic HTLC primitive. NOT affiliated with Hashlock Pty Ltd (hashlock.com).",
+  "description": "Hashlock Markets \u2014 the settlement layer for the agent economy, as MCP tools. Non-custodial cross-chain OTC: sealed RFQ + price negotiation + HTLC atomic settlement (both legs settle or both refund; no custodian). BTC \u2194 EVM / TRON. TESTNETS ONLY for now (Ethereum Sepolia, TRON Nile, Bitcoin signet) \u2014 mainnet after the security-hardening gate. Autonomous-agent ready: SIWE login with the agent's own key, swap secrets generated locally. NOT affiliated with Hashlock Pty Ltd (hashlock.com).",
   "license": "MIT",
   "homepage": "https://hashlock.markets",
   "author": {
@@ -30,8 +30,13 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@hashlock-tech/sdk": "^0.2.0",
-    "@modelcontextprotocol/sdk": "^1.12.1",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "bip322-js": "^3.0.0",
+    "bitcoinjs-lib": "^6.1.7",
+    "ecpair": "^2.1.0",
+    "tiny-secp256k1": "^2.2.3",
+    "tronweb": "^6.0.0",
+    "viem": "^2.21.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
@@ -82,5 +87,11 @@
   },
   "engines": {
     "node": ">=18"
-  }
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "packageManager": "pnpm@9.15.0"
 }

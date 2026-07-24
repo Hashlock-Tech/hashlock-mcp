@@ -10,34 +10,42 @@ start:
 
 config:
   type: "object"
-  required: ["HASHLOCK_ACCESS_TOKEN"]
   properties:
-    HASHLOCK_ACCESS_TOKEN:
+    HASHLOCK_EVM_KEY:
       type: "string"
-      title: "Hashlock access token"
+      title: "Agent EVM private key (testnet)"
       description: >-
-        Bearer token obtained from https://hashlock.markets/sign/login.
-        Issued via SIWE (Sign-In with Ethereum); valid for 7 days.
-        Re-sign after expiry.
-    HASHLOCK_ENDPOINT:
+        0x private key for autonomous SIWE login — the server signs the login
+        itself and re-authenticates on expiry. Use a dedicated TESTNET key.
+    HASHLOCK_TRON_KEY:
       type: "string"
-      title: "GraphQL endpoint"
-      description: "Override the Hashlock GraphQL endpoint. Default is production."
-      default: "https://hashlock.markets/graphql"
+      title: "Agent TRON private key (testnet)"
+      description: "64-hex TRON key for autonomous signMessageV2 login + TRON settlement."
+    HASHLOCK_BTC_KEY:
+      type: "string"
+      title: "Agent BTC WIF (signet)"
+      description: "Bitcoin WIF for autonomous BIP-322 login + BTC HTLC claims."
+    HASHLOCK_TOKEN:
+      type: "string"
+      title: "Hashlock JWT"
+      description: "A ready JWT (alternative to a key)."
+    HASHLOCK_API_URL:
+      type: "string"
+      title: "REST API endpoint"
+      description: "Override the Hashlock Markets REST API endpoint."
+      default: "https://dev.hashlock.markets/api"
 
 metadata:
   name: "Hashlock Markets"
   description: >-
-    Atomic settlement layer for the agent economy. Sealed-bid RFQ +
-    HTLC atomic swap, fused into one operation. Two parties on different
-    chains — autonomous agents or institutional OTC desks — exchange
-    value without trusting each other or a third party. Zero slippage,
-    zero counterparty risk, non-custodial. BIS DvP-1 by construction.
-    ETH/BTC/SUI. MCP-native, retry-safe, signed receipts. 15 tools:
-    create_rfq, respond_rfq, list_open_rfqs, swap_quote, swap_status,
-    swap_execute, swap_cancel, create_htlc, withdraw_htlc, refund_htlc,
-    get_htlc, list_supported_pairs, list_my_trades,
-    create_compute_capacity_listing, accept_compute_capacity_listing.
+    The settlement layer for the agent economy. Non-custodial cross-chain OTC:
+    sealed RFQ + price negotiation + HTLC atomic settlement — both legs settle
+    or both refund; no bridge, no custodian, no counterparty risk. BTC ↔ EVM /
+    TRON. TESTNETS ONLY for now (Ethereum Sepolia, TRON Nile, Bitcoin signet).
+    Autonomous-agent ready: EVM/TRON/BTC login with the agent's own keys +
+    on-chain fund/claim; swap secrets generated locally. 16 tools: list_assets, list_open_rfqs, get_rfq,
+    create_rfq, cancel_rfq, respond_to_rfq, negotiate, my_rfqs, my_deals,
+    deal_status, set_settlement_address, get_deal_secret, reveal_claim, whoami, fund_leg, claim_leg (autonomous on-chain settlement, EVM/TRON/BTC).
   homepage: "https://hashlock.markets"
   repository: "https://github.com/Hashlock-Tech/hashlock-mcp"
   license: "MIT"
@@ -54,8 +62,8 @@ metadata:
     - "atomic-swap"
     - "cross-chain"
     - "rfq"
-    - "dvp"
-    - "ethereum"
-    - "bitcoin"
-    - "sui"
     - "otc"
+    - "bitcoin"
+    - "ethereum"
+    - "tron"
+    - "testnet"
