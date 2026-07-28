@@ -8,10 +8,11 @@ import { claimMyLeg, fundMyLeg } from './settlement.js';
 
 /**
  * MCP tools over the Hashlock Markets OTC flow: browse the board → create/respond to an RFQ →
- * negotiate a price in the deal thread → accept (both sides) → track HTLC settlement.
+ * negotiate a price in the deal thread → accept (both sides) → settle the HTLC.
  * Amounts are HUMAN decimal strings ("0.5"), converted exactly to base units via the asset
- * registry. Assets are referenced by "SYMBOL@chain" (or uuid). Settlement signing (fund/claim)
- * is NOT exposed — the agent/user signs with their own wallet; the tools cover everything else.
+ * registry. Assets are referenced by "SYMBOL@chain" (or uuid). Settlement has two modes:
+ * fund_leg/claim_leg sign on-chain autonomously with the agent's own keys, OR the user signs
+ * fund/claim with their own wallet (web app / external signer) and the tools just track state.
  */
 export function registerTools(server: McpServer, api: HashlockClient, secrets: SecretStore): void {
   // ── helpers ─────────────────────────────────────────────────────────────────
