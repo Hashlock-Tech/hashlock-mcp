@@ -1,8 +1,8 @@
 {
   "name": "@hashlock-tech/mcp",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "mcpName": "io.github.Hashlock-Tech/hashlock",
-  "description": "Hashlock Markets \u2014 the settlement layer for the agent economy, as MCP tools. Non-custodial cross-chain OTC: sealed RFQ + price negotiation + HTLC atomic settlement (both legs settle or both refund; no custodian). BTC \u2194 EVM / TRON. TESTNETS ONLY for now (Ethereum Sepolia, TRON Nile, Bitcoin signet) \u2014 mainnet after the security-hardening gate. Autonomous-agent ready: SIWE login with the agent's own key, swap secrets generated locally. NOT affiliated with Hashlock Pty Ltd (hashlock.com).",
+  "description": "Hashlock Markets — the settlement layer for the agent economy, as MCP tools. Non-custodial cross-chain OTC: sealed RFQ + price negotiation + HTLC atomic settlement (both legs settle or both refund; no custodian). BTC ↔ EVM / TRON. TESTNETS ONLY for now (Ethereum Sepolia, TRON Nile, Bitcoin signet) — mainnet after the security-hardening gate. Autonomous-agent ready: SIWE login with the agent's own key, swap secrets generated locally. NOT affiliated with Hashlock Pty Ltd (hashlock.com).",
   "license": "MIT",
   "homepage": "https://hashlock.markets",
   "author": {
@@ -30,7 +30,7 @@
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "bip322-js": "^3.0.0",
     "bitcoinjs-lib": "^6.1.7",
     "ecpair": "^2.1.0",
@@ -43,7 +43,8 @@
     "@types/node": "^25.6.0",
     "tsup": "^8.0.0",
     "typescript": "^5.4.0",
-    "vitest": "^4.1.4"
+    "vite": "^8.0.16",
+    "vitest": "^4.1.10"
   },
   "keywords": [
     "agent-economy",
@@ -91,7 +92,18 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "esbuild"
-    ]
+    ],
+    "overrides": {
+      "hono": ">=4.12.27",
+      "fast-uri": ">=3.1.4",
+      "ws": ">=8.21.0",
+      "qs": ">=6.15.2",
+      "body-parser": ">=2.3.0",
+      "ip-address": ">=10.1.1",
+      "postcss": ">=8.5.18",
+      "esbuild": ">=0.28.1",
+      "@hono/node-server": ">=2.0.5"
+    }
   },
   "packageManager": "pnpm@9.15.0"
 }
