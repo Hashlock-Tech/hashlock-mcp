@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.Hashlock-Tech/hashlock",
-  "description": "Non-custodial cross-chain OTC for AI agents: sealed RFQ + negotiation + HTLC atomic settlement (BTC/EVM/TRON). Testnets only until the hardening gate.",
+  "description": "Non-custodial cross-chain OTC for AI agents: sealed RFQ, negotiation, HTLC atomic swaps. Testnet.",
   "title": "Hashlock Markets",
   "repository": {
     "url": "https://github.com/Hashlock-Tech/hashlock-mcp",
