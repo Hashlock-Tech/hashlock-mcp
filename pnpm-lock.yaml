@@ -5,7 +5,6 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  hono: '>=4.12.27'
   fast-uri: '>=3.1.4'
   ws: '>=8.21.0'
   qs: '>=6.15.2'
@@ -13,7 +12,6 @@ overrides:
   ip-address: '>=10.1.1'
   postcss: '>=8.5.18'
   esbuild: '>=0.28.1'
-  '@hono/node-server': '>=2.0.5'
 
 importers:
 
@@ -253,7 +251,7 @@ packages:
     resolution: {integrity: sha512-EB2rTyyl27qT8KtvEysgfcLK2jhp4KBb5+XyJ5/bcKNA64usp6qyuUWja9X4QB8Rx9U/yhZHGpfI96Xa/jem4Q==}
     peerDependencies:
       '@modelcontextprotocol/sdk': ^1.29.0
-      hono: '>=4.12.27'
+      hono: '*'
       hono-rate-limiter: ^0.5.3
       zod: ^3.25.0 || ^4.0.0
 
@@ -261,7 +259,7 @@ packages:
     resolution: {integrity: sha512-eWpQYr67tqJLeaSUl0Q+TquuYfUdTibpOJlUMV2FfUP7+KqCC5TufnwnlXL6mobZBJbGAYRd7ZvEBDCbLInjhg==}
     engines: {node: '>=20'}
     peerDependencies:
-      hono: '>=4.12.27'
+      hono: ^4
 
   '@jridgewell/gen-mapping@0.3.13':
     resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
@@ -1047,7 +1045,7 @@ packages:
   hono-rate-limiter@0.5.3:
     resolution: {integrity: sha512-M0DxbVMpPELEzLi0AJg1XyBHLGJXz7GySjsPoK+gc5YeeBsdGDGe+2RvVuCAv8ydINiwlbxqYMNxUEyYfRji/A==}
     peerDependencies:
-      hono: '>=4.12.27'
+      hono: ^4.10.8
       unstorage: ^1.17.3
     peerDependenciesMeta:
       unstorage:
