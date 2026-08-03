@@ -19,6 +19,12 @@ importers:
 
   .:
     dependencies:
+      '@hono/mcp':
+        specifier: ^0.3.1
+        version: 0.3.1(@modelcontextprotocol/sdk@1.30.0(zod@3.25.76))(hono-rate-limiter@0.5.3(hono@4.12.32))(hono@4.12.32)(zod@3.25.76)
+      '@hono/node-server':
+        specifier: ^2.0.5
+        version: 2.0.12(hono@4.12.32)
       '@modelcontextprotocol/sdk':
         specifier: ^1.30.0
         version: 1.30.0(zod@3.25.76)
@@ -31,6 +37,9 @@ importers:
       ecpair:
         specifier: ^2.1.0
         version: 2.1.0
+      hono:
+        specifier: ^4.12.27
+        version: 4.12.32
       tiny-secp256k1:
         specifier: ^2.2.3
         version: 2.2.4
@@ -239,6 +248,14 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@hono/mcp@0.3.1':
+    resolution: {integrity: sha512-EB2rTyyl27qT8KtvEysgfcLK2jhp4KBb5+XyJ5/bcKNA64usp6qyuUWja9X4QB8Rx9U/yhZHGpfI96Xa/jem4Q==}
+    peerDependencies:
+      '@modelcontextprotocol/sdk': ^1.29.0
+      hono: '>=4.12.27'
+      hono-rate-limiter: ^0.5.3
+      zod: ^3.25.0 || ^4.0.0
 
   '@hono/node-server@2.0.12':
     resolution: {integrity: sha512-eWpQYr67tqJLeaSUl0Q+TquuYfUdTibpOJlUMV2FfUP7+KqCC5TufnwnlXL6mobZBJbGAYRd7ZvEBDCbLInjhg==}
@@ -1026,6 +1043,15 @@ packages:
 
   hmac-drbg@1.0.1:
     resolution: {integrity: sha512-Tti3gMqLdZfhOQY1Mzf/AanLiqh1WTiJgEj26ZuYQ9fbkLomzGchCws4FyrSd4VkpBfiNhaE1On+lOz894jvXg==}
+
+  hono-rate-limiter@0.5.3:
+    resolution: {integrity: sha512-M0DxbVMpPELEzLi0AJg1XyBHLGJXz7GySjsPoK+gc5YeeBsdGDGe+2RvVuCAv8ydINiwlbxqYMNxUEyYfRji/A==}
+    peerDependencies:
+      hono: '>=4.12.27'
+      unstorage: ^1.17.3
+    peerDependenciesMeta:
+      unstorage:
+        optional: true
 
   hono@4.12.32:
     resolution: {integrity: sha512-XcuyW9qE2kJn07PkecMOBd5Vq/hMy7mmGw+idz1yblbg9N17ijJODrvPkn7/dwL3Kulj8LcRJ69DLOWf91dRUg==}
@@ -1853,6 +1879,14 @@ snapshots:
   '@esbuild/win32-x64@0.28.1':
     optional: true
 
+  '@hono/mcp@0.3.1(@modelcontextprotocol/sdk@1.30.0(zod@3.25.76))(hono-rate-limiter@0.5.3(hono@4.12.32))(hono@4.12.32)(zod@3.25.76)':
+    dependencies:
+      '@modelcontextprotocol/sdk': 1.30.0(zod@3.25.76)
+      hono: 4.12.32
+      hono-rate-limiter: 0.5.3(hono@4.12.32)
+      pkce-challenge: 5.0.1
+      zod: 3.25.76
+
   '@hono/node-server@2.0.12(hono@4.12.32)':
     dependencies:
       hono: 4.12.32
@@ -2668,6 +2702,10 @@ snapshots:
       hash.js: 1.1.7
       minimalistic-assert: 1.0.1
       minimalistic-crypto-utils: 1.0.1
+
+  hono-rate-limiter@0.5.3(hono@4.12.32):
+    dependencies:
+      hono: 4.12.32
 
   hono@4.12.32: {}
 

@@ -19,6 +19,16 @@ The canonical [Model Context Protocol](https://modelcontextprotocol.io) server f
 
 Settlement **signing** (funding and claiming the HTLCs) stays with your own wallet — the server never holds keys or funds. The swap **secret is generated locally** on your machine and only its `sha256` hashlock is sent; retrieve it with `get_deal_secret` when it's time to claim.
 
+## Two ways to run
+
+- **Local (stdio)** — the npm package below. You run it on your machine with **your own keys**; it can
+  settle **autonomously** (SIWE login + on-chain signing with `HASHLOCK_*_KEY`). Full trust in yourself.
+- **Remote (hosted, Streamable HTTP)** — a public URL (e.g. `https://hashlock.markets/mcp`) anyone can
+  add from Claude / ChatGPT / any MCP client. Multi-tenant, so it is strictly **non-custodial**: you
+  authenticate with your own Hashlock developer key, settlement returns **unsigned** transactions you
+  sign with your own wallet, and the server never holds keys or your swap preimage. See
+  [Remote (hosted)](#remote-hosted) below.
+
 ## Install
 
 Local stdio via `npx` (Claude Desktop / Cursor / Windsurf `mcpServers` config):
@@ -54,6 +64,37 @@ The first configured key (EVM → TRON → BTC) mints the session; each key also
 With none set, read-only tools (`list_assets`, `list_open_rfqs`, `get_rfq`) still work. Use dedicated **testnet** keys.
 
 Other env: `HASHLOCK_API_URL` (default `https://dev.hashlock.markets/api`), `HASHLOCK_APP_URL` (share links; default derived), `HASHLOCK_EVM_RPC` (default a public Sepolia RPC), `HASHLOCK_TRON_HOST` (default Nile), `HASHLOCK_SECRETS_PATH` (default `~/.hashlock/mcp-secrets.json`, mode 0600).
+
+## Remote (hosted)
+
+The same server also runs as a **remote MCP over Streamable HTTP** so anyone can connect by URL — no
+install. This is the multi-tenant, **non-custodial** surface: browse, RFQ, negotiate, and get **unsigned**
+fund/claim/refund transactions you sign with your own wallet (there is no autonomous key-in-env signing
+and no server-side secret storage here — you supply your own `hashlock` and keep your own preimage).
+
+**Connect from a client:** add the server URL and send your Hashlock developer key (create one at
+[hashlock.markets/developers](https://hashlock.markets/developers)) as `Authorization: Bearer hk_…`.
+
+```
+URL:   https://hashlock.markets/mcp
+Header: Authorization: Bearer hk_test_…
+```
+
+> One-click OAuth connect (so Claude/ChatGPT mint the key for you after login) is the next slice —
+> for now the endpoint takes the bearer key directly, which works from any client that lets you set a
+> custom auth header. **Testnets only** until the hardening gate.
+
+**Run the hosted service yourself:**
+
+```bash
+docker build -t hashlock-mcp-http .
+docker run -p 8080:8080 -e HASHLOCK_V1_URL=https://api-dev.hashlock.markets/v1 hashlock-mcp-http
+# or, from source:
+pnpm build && HASHLOCK_V1_URL=https://api-dev.hashlock.markets/v1 PORT=8080 pnpm start:http
+```
+
+Env: `HASHLOCK_V1_URL` (developer-API base, default `https://api.hashlock.markets/v1`) · `PORT` (default
+`8080`). Put it behind your reverse proxy at `/mcp`; `GET /health` is a liveness probe.
 
 ## Tools (16)
 

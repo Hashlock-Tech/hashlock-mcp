@@ -13,7 +13,8 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "hashlock-mcp": "dist/index.js"
+    "hashlock-mcp": "dist/index.js",
+    "hashlock-mcp-http": "dist/http/index.js"
   },
   "files": [
     "dist",
@@ -24,16 +25,20 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "start": "node dist/index.js",
+    "start:http": "node dist/http/index.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
+    "@hono/mcp": "^0.3.1",
+    "@hono/node-server": "^2.0.5",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "bip322-js": "^3.0.0",
     "bitcoinjs-lib": "^6.1.7",
     "ecpair": "^2.1.0",
+    "hono": "^4.12.27",
     "tiny-secp256k1": "^2.2.3",
     "tronweb": "^6.0.0",
     "viem": "^2.21.0",
