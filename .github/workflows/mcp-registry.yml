@@ -1,0 +1,52 @@
+name: MCP Registry
+
+# Publish server.json to the official MCP Registry (registry.modelcontextprotocol.io).
+# Runs on every version tag (alongside the npm Release workflow — it WAITS for the npm version to be
+# live, since the registry validates ownership via the package's mcpName field), and manually via
+# workflow_dispatch for out-of-band republishes. Auth = GitHub OIDC: running in the Hashlock-Tech org
+# proves the io.github.Hashlock-Tech/* namespace; no long-lived token.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # GitHub OIDC → mcp-publisher login
+
+jobs:
+  publish:
+    name: Publish server.json
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Verify server.json ↔ package.json versions
+        run: |
+          PKG="$(node -p "require('./package.json').version")"
+          SJ_PKG="$(node -p "require('./server.json').packages[0].version")"
+          echo "package.json=$PKG server.json.packages[0]=$SJ_PKG"
+          [ "$PKG" = "$SJ_PKG" ] || { echo "::error::server.json packages[0].version ($SJ_PKG) != package.json version ($PKG)"; exit 1; }
+
+      - name: Wait for the npm version to be live
+        run: |
+          PKG="$(node -p "require('./package.json').version")"
+          for i in $(seq 1 30); do
+            if npm view "@hashlock-tech/mcp@$PKG" version >/dev/null 2>&1; then echo "npm has $PKG"; exit 0; fi
+            echo "npm does not have $PKG yet ($i/30) — waiting 20s"; sleep 20
+          done
+          echo "::error::@hashlock-tech/mcp@$PKG never appeared on npm"; exit 1
+
+      - name: Install mcp-publisher (pinned + checksum)
+        run: |
+          curl -sSL -o mcp-publisher.tar.gz \
+            "https://github.com/modelcontextprotocol/registry/releases/download/v1.8.0/mcp-publisher_linux_amd64.tar.gz"
+          echo "1370446bbe74d562608e8005a6ccce02d146a661fbd78674e11cc70b9618d6cf  mcp-publisher.tar.gz" | sha256sum -c -
+          tar xzf mcp-publisher.tar.gz mcp-publisher
+
+      - name: Login (GitHub OIDC) + publish
+        run: |
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish
