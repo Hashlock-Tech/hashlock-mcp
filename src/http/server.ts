@@ -18,6 +18,8 @@ import { makeCallV1 } from './v1-client.js';
 export interface HttpServerOptions {
   /** Base URL of the developer API, e.g. https://api.hashlock.markets/v1 */
   v1Url: string;
+  /** Public origin of this deployment — used to point clients at the OAuth metadata (RFC 9728). */
+  publicUrl?: string;
   name?: string;
   version?: string;
 }
@@ -35,9 +37,12 @@ export function createHttpApp(opts: HttpServerOptions): Hono {
   app.all('/mcp', async (c) => {
     const token = bearer(c.req.header('authorization'));
     if (!token) {
-      // 401 + WWW-Authenticate so MCP clients know an API key is required.
-      c.header('WWW-Authenticate', 'Bearer realm="hashlock", error="invalid_token"');
-      return c.json({ error: 'missing API key — create one at https://hashlock.markets/developers and send it as Authorization: Bearer hk_…' }, 401);
+      // The `resource_metadata` pointer is what turns this into one-click connect: a client that gets
+      // this 401 fetches the metadata, discovers the authorization server, registers itself and runs
+      // the OAuth flow on its own (RFC 9728). Without it the user has to paste a key by hand.
+      const rm = opts.publicUrl ? `, resource_metadata="${opts.publicUrl.replace(/\/+$/, '')}/.well-known/oauth-protected-resource"` : '';
+      c.header('WWW-Authenticate', `Bearer realm="hashlock", error="invalid_token"${rm}`);
+      return c.json({ error: 'authorization required — connect through your MCP client, or use a key from /developers' }, 401);
     }
 
     // Fresh per-request server + transport (stateless). Tools proxy to /v1 with THIS caller's key.
