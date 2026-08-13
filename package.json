@@ -38,7 +38,7 @@
     "bip322-js": "^3.0.0",
     "bitcoinjs-lib": "^6.1.7",
     "ecpair": "^2.1.0",
-    "hono": "^4.12.27",
+    "hono": "^4.13.2",
     "tiny-secp256k1": "^2.2.3",
     "tronweb": "^6.0.0",
     "viem": "^2.21.0",
@@ -99,7 +99,7 @@
       "esbuild"
     ],
     "overrides": {
-      "fast-uri": ">=3.1.4",
+      "fast-uri": ">=4.1.2",
       "ws": ">=8.21.0",
       "qs": ">=6.15.2",
       "body-parser": ">=2.3.0",
