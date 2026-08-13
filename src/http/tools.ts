@@ -148,21 +148,28 @@ export function registerHostedTools(server: McpServer, callV1: CallV1): void {
 
   server.tool(
     'build_claim',
-    'Build the UNSIGNED claim (reveals the secret on-chain). Requires both legs funded. secret = 32-byte hex preimage.',
+    'Build the UNSIGNED claim (reveals the secret on-chain). Requires both legs funded. secret = 32-byte ' +
+      'hex preimage. EVM returns txs to sign and send; TRON returns a transaction whose txID you sign; ' +
+      'Bitcoin returns sign="btc-sighash" — sign sighashHex with secp256k1 and pass it back through ' +
+      'broadcast_tx together with psbtBase64 and preimageHex, and the witness is assembled for you.',
     { id: z.string().uuid(), leg: z.enum(['a', 'b']), secret: z.string() },
     async ({ id, leg, secret }) => out(await callV1(`/swaps/${id}/legs/${leg}/claim`, { method: 'POST', body: { secret } })),
   );
 
   server.tool(
     'build_refund',
-    'Build the UNSIGNED refund for a leg (available after its timelock expires).',
+    'Build the UNSIGNED refund for a leg (available after its timelock expires). Same signing shapes as ' +
+      'build_claim; for Bitcoin, omit preimageHex when broadcasting so the refund branch is taken.',
     { id: z.string().uuid(), leg: z.enum(['a', 'b']) },
     async ({ id, leg }) => out(await callV1(`/swaps/${id}/legs/${leg}/refund`, { method: 'POST' })),
   );
 
   server.tool(
     'broadcast_tx',
-    'Relay a transaction you signed yourself. chain ∈ {evm, tron, bitcoin}; signed = the chain-specific signed payload from your wallet.',
+    'Relay a transaction you signed yourself. chain ∈ {evm, tron, bitcoin}. signed = the chain-specific ' +
+      'payload: EVM a raw 0x transaction, TRON the signed transaction object, Bitcoin either a raw hex ' +
+      'transaction or { psbtBase64, signatureHex, preimageHex? } from a build step — the last form has ' +
+      'the witness assembled here, so you never have to serialise Bitcoin script yourself.',
     { chain: z.enum(['evm', 'tron', 'bitcoin']), signed: z.unknown() },
     async ({ chain, signed }) => out(await callV1('/tx/broadcast', { method: 'POST', body: { chain, signed } })),
   );
