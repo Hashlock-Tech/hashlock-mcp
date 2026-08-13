@@ -8,14 +8,14 @@
     "source": "github",
     "id": "1206275989"
   },
-  "version": "1.5.1",
+  "version": "1.6.0",
   "websiteUrl": "https://hashlock.markets",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@hashlock-tech/mcp",
-      "version": "0.5.1",
+      "version": "0.6.0",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
@@ -30,7 +30,7 @@
       ],
       "environmentVariables": [
         {
-          "description": "EVM private key (0x, 32-byte) for autonomous SIWE login + EVM settlement \u2014 dedicated TESTNET key",
+          "description": "EVM private key (0x, 32-byte) for autonomous SIWE login + EVM settlement — dedicated TESTNET key",
           "isRequired": false,
           "isSecret": true,
           "name": "HASHLOCK_EVM_KEY"

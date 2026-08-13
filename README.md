@@ -23,11 +23,10 @@ Settlement **signing** (funding and claiming the HTLCs) stays with your own wall
 
 - **Local (stdio)** — the npm package below. You run it on your machine with **your own keys**; it can
   settle **autonomously** (SIWE login + on-chain signing with `HASHLOCK_*_KEY`). Full trust in yourself.
-- **Remote (hosted, Streamable HTTP)** — a public URL (e.g. `https://hashlock.markets/mcp`) anyone can
-  add from Claude / ChatGPT / any MCP client. Multi-tenant, so it is strictly **non-custodial**: you
-  authenticate with your own Hashlock developer key, settlement returns **unsigned** transactions you
-  sign with your own wallet, and the server never holds keys or your swap preimage. See
-  [Remote (hosted)](#remote-hosted) below.
+- **Remote (hosted, Streamable HTTP)** — a public URL (`https://dev.hashlock.markets/mcp`) anyone can add
+  from Claude / ChatGPT / any MCP client; one-click OAuth, no install. Multi-tenant, so it is strictly
+  **non-custodial**: settlement returns **unsigned** transactions you sign with your own wallet, and the
+  server never holds keys or your swap preimage. See [Remote (hosted)](#remote-hosted) below.
 
 ## Install
 
@@ -72,17 +71,35 @@ install. This is the multi-tenant, **non-custodial** surface: browse, RFQ, negot
 fund/claim/refund transactions you sign with your own wallet (there is no autonomous key-in-env signing
 and no server-side secret storage here — you supply your own `hashlock` and keep your own preimage).
 
-**Connect from a client:** add the server URL and send your Hashlock developer key (create one at
-[hashlock.markets/developers](https://hashlock.markets/developers)) as `Authorization: Bearer hk_…`.
+**Connect from a client:** add the server URL. Nothing else — the client discovers that it needs
+authorization, sends you to Hashlock to sign in and approve, and receives its own key:
 
 ```
-URL:   https://hashlock.markets/mcp
-Header: Authorization: Bearer hk_test_…
+URL: https://dev.hashlock.markets/mcp
 ```
 
-> One-click OAuth connect (so Claude/ChatGPT mint the key for you after login) is the next slice —
-> for now the endpoint takes the bearer key directly, which works from any client that lets you set a
-> custom auth header. **Testnets only** until the hardening gate.
+The grant then appears under [Developers](https://dev.hashlock.markets/developers) as an ordinary API key
+and can be revoked there at any time. Clients that do not speak OAuth can still send a key they created
+themselves as `Authorization: Bearer hk_…`.
+
+<details><summary>How the OAuth flow works</summary>
+
+Standard OAuth 2.1, so any compliant MCP client drives it unattended:
+
+| Step | Endpoint |
+|---|---|
+| Unauthorized call names its metadata | `401` + `WWW-Authenticate: … resource_metadata=…` (RFC 9728) |
+| Client reads the resource + server metadata | `/.well-known/oauth-protected-resource`, `/.well-known/oauth-authorization-server` (RFC 8414) |
+| Client registers itself | `POST /oauth/register` (RFC 7591) |
+| You sign in and approve, in the browser | `/oauth/authorize` |
+| Client redeems the code for a key | `POST /oauth/token` — PKCE `S256` required (RFC 7636) |
+
+Codes are single-use and expire in 60 seconds; redirect URIs are allowlisted, with loopback permitted per
+RFC 8252. The issued token IS the API key, so a grant is revocable from the same list as every other key.
+
+</details>
+
+> **Testnets only** until the hardening gate.
 
 **Run the hosted service yourself:**
 
