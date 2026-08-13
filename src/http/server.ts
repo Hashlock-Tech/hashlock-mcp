@@ -2,6 +2,7 @@ import { StreamableHTTPTransport } from '@hono/mcp';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { rateLimit } from './rate-limit.js';
 import { registerHostedTools } from './tools.js';
 import { makeCallV1 } from './v1-client.js';
 
@@ -31,6 +32,10 @@ export function createHttpApp(opts: HttpServerOptions): Hono {
   const app = new Hono();
 
   app.use('/mcp', cors({ origin: '*', allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'], allowHeaders: ['Content-Type', 'Authorization', 'Mcp-Session-Id'], exposeHeaders: ['Mcp-Session-Id'] }));
+
+  // Bound the public endpoint itself. /v1 limits per API key downstream, but that only helps once a
+  // credential is presented — this sits in front of that.
+  app.use('/mcp', rateLimit({ windowMs: 60_000, max: Number(process.env.MCP_RATE_LIMIT_MAX ?? 240) }));
 
   app.get('/health', (c) => c.json({ status: 'ok', service: 'hashlock-mcp-http', ts: new Date().toISOString() }));
 
