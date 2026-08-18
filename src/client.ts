@@ -153,6 +153,7 @@ export class HashlockClient {
       method,
       headers: {
         'content-type': 'application/json',
+        'x-hashlock-client': 'mcp',
         ...(auth && this.token ? { authorization: `Bearer ${this.token}` } : {}),
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,

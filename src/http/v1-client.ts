@@ -14,6 +14,7 @@ export function makeCallV1(baseUrl: string, token: string): CallV1 {
       method: init?.method ?? 'GET',
       headers: {
         'content-type': 'application/json',
+        'x-hashlock-client': 'mcp',
         authorization: `Bearer ${token}`,
       },
       body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
