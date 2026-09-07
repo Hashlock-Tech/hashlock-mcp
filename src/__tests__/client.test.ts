@@ -136,9 +136,18 @@ describe('the Solana link is best-effort', () => {
     );
     const api = new HashlockClient(cfg);
     await api.ensureSolanaLinked(); // blows up inside, must not throw
-    expect(api.solanaLinkStatus()).toBe('not attempted yet');
+    expect(api.solanaLinkStatus()).toBe('not linked yet');
     await api.ensureSolanaLinked(); // the retry the first failure must not have foreclosed
     expect(api.solanaLinkStatus()).toBe('linked');
+  });
+
+  it('reports a conflicting account link from the ACCOUNT, with no attempt made at all', () => {
+    // The steady states are the ones nobody attempts: already linked, or linked to someone else. Reading
+    // the status off this process's attempt reported both as "not linked yet".
+    const api = new HashlockClient(cfg);
+    const mine = api.solanaLinkStatus({ solanaAddress: 'GmaDrppBC7P5ARKV8g3djiwP89vz1jLK23V2GBjuAEGB' } as never);
+    expect(mine).toBe('linked');
+    expect(api.solanaLinkStatus({ solanaAddress: 'SomeoneElse' } as never)).toMatch(/SomeoneElse/);
   });
 
   it('never throws, and reports a wallet already linked to the account', async () => {

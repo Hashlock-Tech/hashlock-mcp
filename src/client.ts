@@ -282,6 +282,8 @@ export class HashlockClient {
   private linkingSolana: Promise<void> | null = null;
   /** Settled outcome of the link attempt: done, or a permanent reason worth telling the agent. */
   private solanaLink: { done: true } | { failed: string } | null = null;
+  /** Earliest a transient link failure may be retried — a 429 answered immediately makes itself true. */
+  private linkRetryAfter = 0;
   /**
    * Prove the agent owns its Solana wallet, so the account row carries the address.
    *
@@ -301,6 +303,7 @@ export class HashlockClient {
    */
   async ensureSolanaLinked(): Promise<void> {
     if (!this.cfg.solanaKey || (this.solanaLink && 'done' in this.solanaLink)) return;
+    if (Date.now() < this.linkRetryAfter) return;
     this.linkingSolana ??= (async () => {
       // A BAD KEY IS SETTLED, and it is separated out here rather than classified below: it throws from
       // our own constructor, not from the network, so the retry question does not apply to it. Lumped in
@@ -321,18 +324,59 @@ export class HashlockClient {
         // ApiError, and a 429 is a "come back later" — treating either as settled cached a one-second
         // blip as permanent for the life of the process.
         const settled = e instanceof ApiError && e.status < 500 && e.status !== 429;
-        if (settled) this.solanaLink = { failed: (e as Error).message };
-        else this.linkingSolana = null;
+        if (settled) {
+          this.solanaLink = { failed: (e as Error).message };
+        } else {
+          this.linkingSolana = null;
+          // The floor is for a 429 ONLY. Answering a rate limiter on the very next call is what makes
+          // its verdict true; a dropped connection deserves the opposite — the next call should just try.
+          if (e instanceof ApiError && e.status === 429) this.linkRetryAfter = Date.now() + 30_000;
+        }
       }
     })();
     await this.linkingSolana;
   }
 
-  /** What became of the Solana link, for whoami to report. */
-  solanaLinkStatus(): string | undefined {
+  /**
+   * Whether the Solana wallet held here is proven to the account — derived from the ACCOUNT, not from
+   * what this process happened to attempt. Reading it off the attempt meant the steady state, where the
+   * wallet is already linked and so no attempt is ever made, reported "not attempted yet" for ever; and
+   * the conflict with a wallet linked elsewhere was never reported at all, because the only code that
+   * builds that sentence runs inside an attempt that never happens.
+   */
+  solanaLinkStatus(user?: User | null): string | undefined {
     if (!this.cfg.solanaKey) return undefined;
+    let mine: string;
+    try {
+      mine = this.solanaSigner().address;
+    } catch (e) {
+      return `unusable HASHLOCK_SOLANA_KEY: ${(e as Error).message}`;
+    }
+    const linked = user?.solanaAddress ?? null;
+    if (linked === mine) return 'linked';
+    if (linked) return `this account is linked to Solana wallet ${linked}, not ${mine} — the existing link is left alone`;
+    // No user row to read (or one fetched before this process linked): fall back to what we did.
+    if (this.solanaLink && 'done' in this.solanaLink) return 'linked';
     if (this.solanaLink && 'failed' in this.solanaLink) return this.solanaLink.failed;
-    return this.solanaLink ? 'linked' : 'not attempted yet';
+    return 'not linked yet';
+  }
+
+  /**
+   * Run a request, and if it fails for a reason the Solana link would explain, say what that reason was.
+   * Not throwing the link failure is right — it must not block chains it has nothing to do with — but
+   * dropping it left the agent with the server's generic "prove ownership of your Solana wallet", which
+   * tells it to do the very thing this client already tried and recorded a reason for declining.
+   */
+  private async withSolanaReason<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (e) {
+      const reason = this.solanaLink && 'failed' in this.solanaLink ? this.solanaLink.failed : null;
+      if (reason && /solana/i.test((e as Error).message)) {
+        throw new ApiError(`${(e as Error).message} — ${reason}`, e instanceof ApiError ? e.status : 400);
+      }
+      throw e;
+    }
   }
 
   private async linkSolanaOnce(s: SolanaSigner): Promise<void> {
@@ -427,7 +471,9 @@ export class HashlockClient {
     const res = await this.req<{ user: User | null }>('/me');
     // Kicked off, not awaited: whoami stays a read, and the link still lands for an agent that only ever
     // receives private orders — users.solanaAddress is what ownedAddresses puts them in the feed by.
-    if (this.cfg.solanaKey && res.user && !res.user.solanaAddress) void this.ensureSolanaLinked();
+    // Explicitly caught, not merely `void`: "never throws" is a contract this file keeps by inspection,
+    // and an unhandled rejection here takes the stdio server down rather than one tool call.
+    if (this.cfg.solanaKey && res.user && !res.user.solanaAddress) void this.ensureSolanaLinked().catch(() => {});
     return res;
   };
   listRfqs = (q: { baseAssetId?: string; quoteAssetId?: string; direction?: string } = {}) => {
@@ -437,12 +483,12 @@ export class HashlockClient {
   getRfq = (id: string) => this.req<{ rfq: Rfq }>(`/rfqs/${id}`, { auth: false });
   createRfq = async (body: Record<string, unknown>) => {
     await this.ensureSolanaLinked();
-    return this.req<{ rfq: Rfq }>('/rfqs', { body });
+    return this.withSolanaReason(() => this.req<{ rfq: Rfq }>('/rfqs', { body }));
   };
   cancelRfq = (id: string) => this.req<{ rfq: Rfq }>(`/rfqs/${id}/cancel`, { body: {} });
   postQuote = async (id: string, quoteAmount: string) => {
     await this.ensureSolanaLinked();
-    return this.req<{ quote: unknown; thread: Thread }>(`/rfqs/${id}/quotes`, { body: { quoteAmount } });
+    return this.withSolanaReason(() => this.req<{ quote: unknown; thread: Thread }>(`/rfqs/${id}/quotes`, { body: { quoteAmount } }));
   };
 
   getThread = (id: string) =>
@@ -453,7 +499,9 @@ export class HashlockClient {
   acceptProposal = (id: string) => this.req<{ thread: Thread }>(`/threads/${id}/accept-proposal`, { body: {} });
   accept = async (id: string, hashlock?: string) => {
     await this.ensureSolanaLinked();
-    return this.req<{ thread: Thread; swap?: Swap }>(`/threads/${id}/accept`, { body: hashlock ? { hashlock } : {} });
+    return this.withSolanaReason(() =>
+      this.req<{ thread: Thread; swap?: Swap }>(`/threads/${id}/accept`, { body: hashlock ? { hashlock } : {} }),
+    );
   };
   reject = (id: string) => this.req(`/threads/${id}/reject`, { body: {} });
 
