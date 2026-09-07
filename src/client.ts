@@ -1,7 +1,19 @@
 import { BtcSigner, type BtcChain } from './chains/btc.js';
 import { EvmSigner, type EvmChain } from './chains/evm.js';
+import { SolanaSigner } from './chains/solana.js';
 import { TronSigner, type TronChain } from './chains/tron.js';
 import type { Config } from './config.js';
+
+/** A server-built Solana transaction, ready for one signature. */
+export interface SolanaLegTx {
+  chain: string;
+  family: string;
+  sign: 'solana-tx';
+  escrow: string;
+  transactionBase64: string;
+  blockhash: string;
+  lastValidBlockHeight: number;
+}
 
 /** Chain params from GET /config — what the signers need to build fund/claim txs. */
 export interface ChainConfig {
@@ -173,6 +185,7 @@ export class HashlockClient {
   private _evm: EvmSigner | null = null;
   private _tron: TronSigner | null = null;
   private _btc: BtcSigner | null = null;
+  private _solana: SolanaSigner | null = null;
   private chainCfg: ChainConfig | null = null;
 
   private get hasKey(): boolean {
@@ -185,6 +198,10 @@ export class HashlockClient {
   tronSigner(): TronSigner {
     if (!this.cfg.tronKey) throw new Error('HASHLOCK_TRON_KEY not set');
     return (this._tron ??= new TronSigner(this.cfg.tronKey));
+  }
+  solanaSigner(): SolanaSigner {
+    if (!this.cfg.solanaKey) throw new Error('HASHLOCK_SOLANA_KEY not set');
+    return (this._solana ??= new SolanaSigner(this.cfg.solanaKey));
   }
   async btcSigner(): Promise<BtcSigner> {
     if (!this.cfg.btcKey) throw new Error('HASHLOCK_BTC_KEY not set');
@@ -321,6 +338,16 @@ export class HashlockClient {
     this.req<{ swap: Swap }>(`/swaps/${id}/address`, { body: { chain, address } });
   reveal = (id: string, body: { secret: string; claimTx?: string; leg?: 'a' | 'b' }) =>
     this.req<{ swap: Swap }>(`/swaps/${id}/reveal`, { body });
+
+  /**
+   * An UNSIGNED settlement transaction for one leg, built server-side. The same four handlers /v1
+   * serves an API-key integrator, and the same ones the web app and the Mini App use — so the agent
+   * signs bytes it did not assemble, and no program IDL lives in this package.
+   */
+  buildLeg = (id: string, leg: 'a' | 'b', action: 'fund' | 'claim' | 'refund', body: Record<string, unknown> = {}) =>
+    this.req<SolanaLegTx>(`/swaps/${id}/legs/${leg}/${action}`, { body });
+  broadcastSigned = (chain: 'evm' | 'tron' | 'bitcoin' | 'solana', signed: unknown) =>
+    this.req<{ txid: string }>('/swaps/tx/broadcast', { body: { chain, signed } });
 }
 
 // ── amount conversion (exact, bigint) ───────────────────────────────────────

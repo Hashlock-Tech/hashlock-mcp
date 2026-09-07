@@ -41,7 +41,8 @@ Local stdio via `npx` (Claude Desktop / Cursor / Windsurf `mcpServers` config):
       "env": {
         "HASHLOCK_EVM_KEY": "0x<agent EVM key (TESTNET!)>",
         "HASHLOCK_TRON_KEY": "<agent TRON key, 64-hex (optional)>",
-        "HASHLOCK_BTC_KEY": "<agent BTC WIF, signet (optional)>"
+        "HASHLOCK_BTC_KEY": "<agent BTC WIF, signet (optional)>",
+        "HASHLOCK_SOLANA_KEY": "<agent Solana key, base58, devnet (optional)>"
       }
     }
   }
@@ -58,7 +59,14 @@ The first configured key (EVM → TRON → BTC) mints the session; each key also
 | `HASHLOCK_EVM_KEY` | EVM | SIWE `personal_sign` |
 | `HASHLOCK_TRON_KEY` | TRON | `signMessageV2` |
 | `HASHLOCK_BTC_KEY` | Bitcoin | BIP-322 |
+| `HASHLOCK_SOLANA_KEY` | Solana | — signing only, see below |
 | `HASHLOCK_TOKEN` | — | a ready JWT (alternative to a key) |
+
+`HASHLOCK_SOLANA_KEY` is base58 — the 64-byte export a wallet gives you, or a bare 32-byte seed. It does
+not log the agent in; set it alongside whichever key does. Solana is also the one chain whose
+transactions this package does not build: the escrow's ADDRESS is a hash of the agreed terms, so the
+server composes each one and the agent signs the bytes it is handed. Set the agent's Solana address as
+its settlement address with `set_settlement_address` before funding.
 
 With none set, read-only tools (`list_assets`, `list_open_rfqs`, `get_rfq`) still work. Use dedicated **testnet** keys.
 

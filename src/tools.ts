@@ -298,7 +298,7 @@ export function registerTools(server: McpServer, api: HashlockClient, secrets: S
   // ── autonomous settlement (signs with the agent's own keys) ──────────────────
   server.tool(
     'fund_leg',
-    'AUTONOMOUS SETTLEMENT: fund YOUR side of an agreed swap on-chain, signing with the agent\'s own key (HASHLOCK_EVM_KEY / TRON / BTC for that leg\'s chain). Funds the leg you give — approves the token (EVM/TRON) and locks it in the HTLC, or pays the P2WSH (BTC). Prerequisites: the deal is agreed and BOTH parties have set their settlement addresses (set_settlement_address). Returns the on-chain tx id. Fund your long leg first if you are the initiator.',
+    'AUTONOMOUS SETTLEMENT: fund YOUR side of an agreed swap on-chain, signing with the agent\'s own key (HASHLOCK_EVM_KEY / TRON / BTC / SOLANA for that leg\'s chain). Funds the leg you give — approves the token (EVM/TRON) and locks it in the HTLC, pays the P2WSH (BTC), or signs the escrow transaction the server builds (Solana). Prerequisites: the deal is agreed and BOTH parties have set their settlement addresses (set_settlement_address). Returns the on-chain tx id. Fund your long leg first if you are the initiator.',
     { swap_id: z.string().uuid() },
     wrapTool(async ({ swap_id }) => {
       const { swap } = await api.getSwap(swap_id);

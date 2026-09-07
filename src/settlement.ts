@@ -7,13 +7,44 @@ import type { SecretStore } from './secrets.js';
  * "maker gives" → maker funds A / taker claims A; leg B = "maker wants" → taker funds B / maker claims B.
  */
 type Leg = 'a' | 'b';
-export type Family = 'evm' | 'tron' | 'btc';
+export type Family = 'evm' | 'tron' | 'btc' | 'svm';
 
 export function familyOf(chain: string): Family {
   const c = chain.toLowerCase();
   if (c.includes('bitcoin') || c === 'btc') return 'btc';
   if (c.includes('tron')) return 'tron';
+  if (c.includes('solana') || c === 'sol') return 'svm';
   return 'evm';
+}
+
+/**
+ * A Solana leg, settled by SIGNING WHAT THE SERVER BUILT. The other three families assemble their own
+ * transaction here, because each is a call this package can express in a few lines. Solana is not: its
+ * escrow ADDRESS is a hash of the agreed terms, so composing an instruction means carrying the
+ * program's IDL, a Borsh coder and the exact byte layout of that hash — a second implementation of
+ * something already verified on devnet, and one that fails by funding an address nobody watches rather
+ * than by throwing. The server already answers with the transaction; the agent only signs it.
+ */
+async function settleSolanaLeg(
+  api: HashlockClient,
+  swapId: string,
+  leg: Leg,
+  action: 'fund' | 'claim' | 'refund',
+  body: Record<string, unknown> = {},
+): Promise<string> {
+  const built = await api.buildLeg(swapId, leg, action, body);
+  const signed = api.solanaSigner().signTransaction(built.transactionBase64);
+  try {
+    return (await api.broadcastSigned('solana', signed)).txid;
+  } catch (e) {
+    // A blockhash is good for about ninety seconds. An agent that paused between building and signing
+    // gets an RPC error naming the blockhash, which reads as a broken transaction rather than a stale
+    // one — and the fix is simply to call again, since buildLeg fetches a fresh one.
+    if (/blockhash|block height exceeded/i.test((e as Error).message)) {
+      throw new Error('this transaction expired before it was broadcast — call again to build and sign a fresh one');
+    }
+    throw e;
+  }
 }
 
 interface LegView {
@@ -98,6 +129,13 @@ export async function fundMyLeg(api: HashlockClient, swap: Swap, assets: Asset[]
     });
     return { tx, leg: view.leg, chain: view.chain };
   }
+  if (fam === 'svm') {
+    // The escrow address IS the agreed terms on this rail, so the server derives it from BOTH parties'
+    // settlement addresses and refuses without them. `view.payout` is checked above; this is the other.
+    if (!view.refund) throw new Error('set your refund address first');
+    const tx = await settleSolanaLeg(api, swap.id, view.leg, 'fund');
+    return { tx, leg: view.leg, chain: view.chain };
+  }
   // btc
   if (!view.htlcAddress) throw new Error('BTC HTLC address not derived yet (set both addresses first)');
   const signer = await api.btcSigner();
@@ -131,6 +169,8 @@ export async function claimMyLeg(
   } else if (fam === 'tron') {
     if (!swap.onchainSwapId) throw new Error('TRON on-chain swapId unknown (leg not funded yet)');
     tx = await api.tronSigner().claim(await api.tronChain(), swap.onchainSwapId, secretHex);
+  } else if (fam === 'svm') {
+    tx = await settleSolanaLeg(api, swap.id, view.leg, 'claim', { secret: secretHex });
   } else {
     if (!view.htlcAddress || !view.redeemScript) throw new Error('BTC HTLC/redeem script unknown (leg not funded yet)');
     const signer = await api.btcSigner();

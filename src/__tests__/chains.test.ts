@@ -12,6 +12,8 @@ describe('familyOf', () => {
     expect(familyOf('tron-nile')).toBe('tron');
     expect(familyOf('ethereum')).toBe('evm');
     expect(familyOf('ethereum-sepolia')).toBe('evm');
+    expect(familyOf('solana')).toBe('svm');
+    expect(familyOf('solana-devnet')).toBe('svm');
   });
 });
 
