@@ -279,7 +279,7 @@ export class HashlockClient {
     this.token = res.token;
   }
 
-  private linkingSolana: Promise<{ ok: true } | { retry: true } | { failed: string }> | null = null;
+  private linkingSolana: Promise<void> | null = null;
   /** Settled outcome of the link attempt: done, or a permanent reason worth telling the agent. */
   private solanaLink: { done: true } | { failed: string } | null = null;
   /**
@@ -292,43 +292,50 @@ export class HashlockClient {
    * Called where it is NEEDED rather than after login: HASHLOCK_TOKEN is a first-class auth mode, and
    * with it login() never runs, so a hook there covered the one path that needs no help.
    */
+  /**
+   * NEVER THROWS. A Solana wallet that cannot be linked must not stop the agent trading anything else —
+   * an earlier version raised the failure from every call site, so one typo in HASHLOCK_SOLANA_KEY, or
+   * an account already linked to the user's own Phantom, blocked posting, quoting and accepting on
+   * BTC↔EVM too. The outcome is RECORDED and reported by whoami instead, which is where an agent looks
+   * when something it did not ask about is wrong.
+   */
   async ensureSolanaLinked(): Promise<void> {
-    if (!this.cfg.solanaKey) return;
-    if (this.solanaLink) {
-      // A PERMANENT failure is raised every time rather than swallowed. The one that matters names the
-      // wallet already on the account and the agent's own — swallowing it left the server's generic
-      // "prove ownership of your Solana wallet" as the only thing the agent saw, which tells it to do
-      // the very thing this client just declined to do.
-      if ('failed' in this.solanaLink) throw new Error(this.solanaLink.failed);
-      return;
-    }
-    // Cached as the PROMISE so concurrent callers share one attempt, and the outcome is RETURNED rather
-    // than read back off the field afterwards — which is also what keeps the narrowing honest.
-    this.linkingSolana ??= (async (): Promise<{ ok: true } | { retry: true } | { failed: string }> => {
+    if (!this.cfg.solanaKey || (this.solanaLink && 'done' in this.solanaLink)) return;
+    this.linkingSolana ??= (async () => {
+      // A BAD KEY IS SETTLED, and it is separated out here rather than classified below: it throws from
+      // our own constructor, not from the network, so the retry question does not apply to it. Lumped in
+      // with the remote failures it looked retryable and re-ran a nonce fetch on every call, for ever,
+      // while never being reported.
+      let signer: SolanaSigner;
       try {
-        await this.linkSolanaOnce();
-        this.solanaLink = { done: true };
-        return { ok: true };
+        signer = this.solanaSigner();
       } catch (e) {
-        // 5xx and transport failures are transient: forget the attempt so a later call retries, and stay
-        // quiet, because the operation the caller actually wants may not need Solana at all. Anything
-        // else is settled — a 409 for another account's wallet, or our own refusal above — and retrying
-        // it every time would be a silent nonce fetch and a 409 on each call.
-        if (e instanceof ApiError && e.status >= 500) {
-          this.linkingSolana = null;
-          return { retry: true };
-        }
-        const failed = (e as Error).message;
-        this.solanaLink = { failed };
-        return { failed };
+        this.solanaLink = { failed: `unusable HASHLOCK_SOLANA_KEY: ${(e as Error).message}` };
+        return;
+      }
+      try {
+        await this.linkSolanaOnce(signer);
+        this.solanaLink = { done: true };
+      } catch (e) {
+        // RETRY unless the server gave a definitive answer. `fetch failed` is a plain TypeError, not an
+        // ApiError, and a 429 is a "come back later" — treating either as settled cached a one-second
+        // blip as permanent for the life of the process.
+        const settled = e instanceof ApiError && e.status < 500 && e.status !== 429;
+        if (settled) this.solanaLink = { failed: (e as Error).message };
+        else this.linkingSolana = null;
       }
     })();
-    const outcome = await this.linkingSolana;
-    if ('failed' in outcome) throw new Error(outcome.failed);
+    await this.linkingSolana;
   }
 
-  private async linkSolanaOnce(): Promise<void> {
-    const s = this.solanaSigner();
+  /** What became of the Solana link, for whoami to report. */
+  solanaLinkStatus(): string | undefined {
+    if (!this.cfg.solanaKey) return undefined;
+    if (this.solanaLink && 'failed' in this.solanaLink) return this.solanaLink.failed;
+    return this.solanaLink ? 'linked' : 'not attempted yet';
+  }
+
+  private async linkSolanaOnce(s: SolanaSigner): Promise<void> {
     // Read the profile directly, not through me(): me() calls ensureSolanaLinked, and going back through
     // it here would leave this awaiting the promise it is itself running.
     const me = (await this.req<{ user: User | null }>('/me')).user;
@@ -338,7 +345,10 @@ export class HashlockClient {
       // reassigns the column unconditionally — which would silently replace a Phantom wallet the user
       // linked in the web app with the agent's key, and then refuse their next order for a balance the
       // agent does not have. me.ts warns about exactly this on its own passive-sync path.
-      throw new Error(`this account is linked to Solana wallet ${me.solanaAddress}, not the agent's ${s.address}`);
+      throw new ApiError(
+        `this account is linked to Solana wallet ${me.solanaAddress}, not the agent's ${s.address} — the existing link is left alone`,
+        409,
+      );
     }
     const { nonce } = await this.req<{ nonce: string }>('/auth/siwe/nonce', { auth: false });
     const message = `Hashlock Markets wants you to sign in.\n\nAddress: ${s.address}\nNonce: ${nonce}\nIssued At: ${new Date().toISOString()}`;
@@ -414,8 +424,11 @@ export class HashlockClient {
    * the link cannot be made, and it reports the reason in `localSigners` instead.
    */
   me = async () => {
-    await this.ensureSolanaLinked().catch(() => undefined);
-    return this.req<{ user: User | null }>('/me');
+    const res = await this.req<{ user: User | null }>('/me');
+    // Kicked off, not awaited: whoami stays a read, and the link still lands for an agent that only ever
+    // receives private orders — users.solanaAddress is what ownedAddresses puts them in the feed by.
+    if (this.cfg.solanaKey && res.user && !res.user.solanaAddress) void this.ensureSolanaLinked();
+    return res;
   };
   listRfqs = (q: { baseAssetId?: string; quoteAssetId?: string; direction?: string } = {}) => {
     const qs = new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][]);

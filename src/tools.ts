@@ -290,9 +290,11 @@ export function registerTools(server: McpServer, api: HashlockClient, secrets: S
 
   server.tool(
     'whoami',
-    'The account you are authenticated as (linked wallet addresses), plus `localSigners.addresses` — what THIS process holds keys for (any key that could not be read is reported separately under `localSigners.unusable`). Use localSigners.addresses.solana as your settlement address on a Solana leg: the server builds that transaction for whoever the leg names, so naming a key you do not hold makes the leg unsignable.',
+    'The account you are authenticated as (linked wallet addresses), plus `localSigners.addresses` — what THIS process holds keys for (any key that could not be read is reported separately under `localSigners.unusable`, and `solanaLink` says whether the Solana wallet held here is proven to the account — an order whose give leg is Solana needs that). Use localSigners.addresses.solana as your settlement address on a Solana leg: the server builds that transaction for whoever the leg names, so naming a key you do not hold makes the leg unsignable.',
     {},
-    wrapTool(async () => okContent({ ...(await api.me()).user, localSigners: await api.localSigners() })),
+    wrapTool(async () =>
+      okContent({ ...(await api.me()).user, localSigners: await api.localSigners(), solanaLink: api.solanaLinkStatus() }),
+    ),
   );
 
   // ── autonomous settlement (signs with the agent's own keys) ──────────────────

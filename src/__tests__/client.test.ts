@@ -110,3 +110,55 @@ describe('auth', () => {
     expect(issued).toBe(1);
   });
 });
+
+/**
+ * The retry-vs-settled split, which is where a High got in: a `fetch failed` TypeError is not an
+ * ApiError, so classing "not an ApiError" as settled cached a one-second blip as permanent and every
+ * later call threw without issuing a request.
+ */
+describe('the Solana link is best-effort', () => {
+  const SECRET = '99eUso3aSbE9tqGSTXzo3TLfKb9RkMTURrHKQ1K7Zh3StnzFNUx8FKCPPPPpR479qsw5zv2WNBKmgiz7WqgAJfM';
+  const cfg = { solanaKey: SECRET, token: 'jwt' } as never;
+
+  it('retries after a transport failure instead of caching it for the process', async () => {
+    let calls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.endsWith('/me')) {
+          calls++;
+          if (calls === 1) throw new TypeError('fetch failed');
+          return new Response(JSON.stringify({ user: { id: 'u', solanaAddress: null } }), { status: 200 });
+        }
+        if (url.includes('/nonce')) return new Response(JSON.stringify({ nonce: 'abc' }), { status: 200 });
+        return new Response(JSON.stringify({ address: 'x', family: 'svm' }), { status: 200 });
+      }),
+    );
+    const api = new HashlockClient(cfg);
+    await api.ensureSolanaLinked(); // blows up inside, must not throw
+    expect(api.solanaLinkStatus()).toBe('not attempted yet');
+    await api.ensureSolanaLinked(); // the retry the first failure must not have foreclosed
+    expect(api.solanaLinkStatus()).toBe('linked');
+  });
+
+  it('never throws, and reports a wallet already linked to the account', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) =>
+        url.endsWith('/me')
+          ? new Response(JSON.stringify({ user: { id: 'u', solanaAddress: 'SomeoneElsesWallet' } }), { status: 200 })
+          : new Response(JSON.stringify({ nonce: 'abc' }), { status: 200 }),
+      ),
+    );
+    const api = new HashlockClient(cfg);
+    await expect(api.ensureSolanaLinked()).resolves.toBeUndefined();
+    expect(api.solanaLinkStatus()).toMatch(/SomeoneElsesWallet/);
+  });
+
+  it('does not block an agent whose Solana key is malformed', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ user: { id: 'u' } }), { status: 200 })));
+    const api = new HashlockClient({ solanaKey: '1111', token: 'jwt' } as never);
+    await expect(api.ensureSolanaLinked()).resolves.toBeUndefined();
+    expect(api.solanaLinkStatus()).toMatch(/32 or 64 bytes/);
+  });
+});
