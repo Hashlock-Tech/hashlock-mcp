@@ -355,8 +355,12 @@ export class HashlockClient {
     const linked = user?.solanaAddress ?? null;
     if (linked === mine) return 'linked';
     if (linked) return `this account is linked to Solana wallet ${linked}, not ${mine} — the existing link is left alone`;
-    // No user row to read (or one fetched before this process linked): fall back to what we did.
     if (this.solanaLink && 'done' in this.solanaLink) return 'linked';
+    // A row that says "unlinked" is the ACCOUNT talking, and it outranks anything cached here: a 409
+    // recorded at start-up is settled for the life of the process, so after the user unlinks that wallet
+    // in the web app the cache would have reported a conflict alongside a solanaAddress of null — one
+    // payload contradicting itself, and no retry. Only speak from the cache when no row was passed.
+    if (user) return 'not linked yet';
     if (this.solanaLink && 'failed' in this.solanaLink) return this.solanaLink.failed;
     return 'not linked yet';
   }
@@ -372,8 +376,14 @@ export class HashlockClient {
       return await fn();
     } catch (e) {
       const reason = this.solanaLink && 'failed' in this.solanaLink ? this.solanaLink.failed : null;
-      if (reason && /solana/i.test((e as Error).message)) {
-        throw new ApiError(`${(e as Error).message} — ${reason}`, e instanceof ApiError ? e.status : 400);
+      // Matched on the messages the server ACTUALLY sends, not on the word "solana": only
+      // assertOwnsGiveFamily names the chain. A refused quote says "insufficient SOL: …" and a refused
+      // private order says "reserved for a specific wallet — prove ownership of that address", so the
+      // wrapper was dead on two of its three call sites.
+      if (reason && /prove ownership|reserved for a specific wallet|insufficient SOL\b/i.test((e as Error).message)) {
+        // 502, not 400: a cause that is not an ApiError is a transport failure, and presenting that as a
+        // client error tells the agent a retryable problem is permanent.
+        throw new ApiError(`${(e as Error).message} — ${reason}`, e instanceof ApiError ? e.status : 502);
       }
       throw e;
     }
