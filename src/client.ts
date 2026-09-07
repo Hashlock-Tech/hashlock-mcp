@@ -285,6 +285,14 @@ export class HashlockClient {
   /** Earliest a transient link failure may be retried — a 429 answered immediately makes itself true. */
   private linkRetryAfter = 0;
   /**
+   * The last TRANSIENT reason, kept apart from the settled one because the two say different things to
+   * an agent: settled means stop asking, transient means it will be tried again. Nothing recorded this
+   * before, so the commonest failure explained nothing — and the 429 floor made that sharpest, since for
+   * thirty seconds ensureSolanaLinked returns without attempting and the agent met the server's bare
+   * "prove ownership of your Solana wallet", which is precisely what this client was backing off from.
+   */
+  private solanaLinkRetry: string | null = null;
+  /**
    * Prove the agent owns its Solana wallet, so the account row carries the address.
    *
    * Signing is not enough on its own: rfq/service.ts refuses to create an order whose GIVE leg is
@@ -319,6 +327,7 @@ export class HashlockClient {
       try {
         await this.linkSolanaOnce(signer);
         this.solanaLink = { done: true };
+        this.solanaLinkRetry = null;
       } catch (e) {
         // RETRY unless the server gave a definitive answer. `fetch failed` is a plain TypeError, not an
         // ApiError, and a 429 is a "come back later" — treating either as settled cached a one-second
@@ -326,7 +335,9 @@ export class HashlockClient {
         const settled = e instanceof ApiError && e.status < 500 && e.status !== 429;
         if (settled) {
           this.solanaLink = { failed: (e as Error).message };
+          this.solanaLinkRetry = null; // a settled answer replaces whatever the earlier attempts said
         } else {
+          this.solanaLinkRetry = (e as Error).message;
           this.linkingSolana = null;
           // The floor is for a 429 ONLY. Answering a rate limiter on the very next call is what makes
           // its verdict true; a dropped connection deserves the opposite — the next call should just try.
@@ -360,9 +371,19 @@ export class HashlockClient {
     // recorded at start-up is settled for the life of the process, so after the user unlinks that wallet
     // in the web app the cache would have reported a conflict alongside a solanaAddress of null — one
     // payload contradicting itself, and no retry. Only speak from the cache when no row was passed.
-    if (user) return 'not linked yet';
+    if (user) return this.notLinkedYet();
     if (this.solanaLink && 'failed' in this.solanaLink) return this.solanaLink.failed;
-    return 'not linked yet';
+    return this.notLinkedYet();
+  }
+
+  /** "Not linked yet" WITH the last transient reason, if there was one, and whether a retry is being
+   *  held off. Saying only "not linked yet" while a 429 floor is in force reads as "nothing is
+   *  happening" when the truth is "we are waiting on purpose, until a moment I can name". */
+  private notLinkedYet(): string {
+    if (!this.solanaLinkRetry) return 'not linked yet';
+    const waitMs = this.linkRetryAfter - Date.now();
+    const when = waitMs > 0 ? `retrying in ${Math.ceil(waitMs / 1000)}s` : 'the next call will retry';
+    return `not linked yet — last attempt failed: ${this.solanaLinkRetry} (${when})`;
   }
 
   /**
@@ -375,7 +396,14 @@ export class HashlockClient {
     try {
       return await fn();
     } catch (e) {
-      const reason = this.solanaLink && 'failed' in this.solanaLink ? this.solanaLink.failed : null;
+      // The settled reason outranks the transient one when both exist: "this wallet belongs to another
+      // account" is the answer, and "the last attempt hit a 429" is only how far we got.
+      const reason =
+        this.solanaLink && 'failed' in this.solanaLink
+          ? this.solanaLink.failed
+          : this.solanaLinkRetry
+            ? `the Solana wallet is not linked: ${this.solanaLinkRetry}`
+            : null;
       // Matched on the messages the server ACTUALLY sends, not on the word "solana": only
       // assertOwnsGiveFamily names the chain. A refused quote says "insufficient SOL: …" and a refused
       // private order says "reserved for a specific wallet — prove ownership of that address", so the
@@ -477,13 +505,22 @@ export class HashlockClient {
    * its Solana wallet, and what lets it answer one. Best-effort here — whoami must still answer when
    * the link cannot be made, and it reports the reason in `localSigners` instead.
    */
-  me = async () => {
+  /**
+   * `link: false` for a caller that has ALREADY awaited ensureSolanaLinked — whoami does. Without it
+   * that sequence started a SECOND attempt: the awaited one fails transiently, which nulls linkingSolana
+   * and records no address, so this line sees a falsy solanaAddress and fires again un-awaited — and
+   * whoami then answers "not linked yet" while that attempt is still in flight, so a success a moment
+   * later is never in the reply the agent already has.
+   */
+  me = async (opts: { link?: boolean } = {}) => {
     const res = await this.req<{ user: User | null }>('/me');
     // Kicked off, not awaited: whoami stays a read, and the link still lands for an agent that only ever
     // receives private orders — users.solanaAddress is what ownedAddresses puts them in the feed by.
     // Explicitly caught, not merely `void`: "never throws" is a contract this file keeps by inspection,
     // and an unhandled rejection here takes the stdio server down rather than one tool call.
-    if (this.cfg.solanaKey && res.user && !res.user.solanaAddress) void this.ensureSolanaLinked().catch(() => {});
+    if (opts.link !== false && this.cfg.solanaKey && res.user && !res.user.solanaAddress) {
+      void this.ensureSolanaLinked().catch(() => {});
+    }
     return res;
   };
   listRfqs = (q: { baseAssetId?: string; quoteAssetId?: string; direction?: string } = {}) => {

@@ -296,7 +296,9 @@ export function registerTools(server: McpServer, api: HashlockClient, secrets: S
       // Awaited, not fired and forgotten: the background attempt was a round trip behind the read, so
       // the FIRST whoami always reported "not attempted yet" whatever happened. It cannot throw.
       await api.ensureSolanaLinked();
-      const user = (await api.me()).user;
+      // `link: false` because the line above already awaited one. Letting me() start another meant this
+      // reply could report the loser of two attempts — see me()'s own note.
+      const user = (await api.me({ link: false })).user;
       return okContent({ ...user, localSigners: await api.localSigners(), solanaLink: api.solanaLinkStatus(user) });
     }),
   );

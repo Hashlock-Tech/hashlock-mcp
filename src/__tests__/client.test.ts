@@ -136,9 +136,92 @@ describe('the Solana link is best-effort', () => {
     );
     const api = new HashlockClient(cfg);
     await api.ensureSolanaLinked(); // blows up inside, must not throw
-    expect(api.solanaLinkStatus()).toBe('not linked yet');
+    // …and SAYS SO. It used to answer a bare "not linked yet", which reads as "nothing happened" — the
+    // commonest failure explaining nothing was the whole of the first half of task #75.
+    expect(api.solanaLinkStatus()).toBe('not linked yet — last attempt failed: fetch failed (the next call will retry)');
     await api.ensureSolanaLinked(); // the retry the first failure must not have foreclosed
     expect(api.solanaLinkStatus()).toBe('linked');
+  });
+
+  it('names the wait when a 429 is holding the retry off, not just "not linked yet"', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.endsWith('/me')) return new Response(JSON.stringify({ error: 'slow down' }), { status: 429 });
+        return new Response(JSON.stringify({ nonce: 'abc' }), { status: 200 });
+      }),
+    );
+    const api = new HashlockClient(cfg);
+    await api.ensureSolanaLinked();
+    // The floor is 30s and it was just set, so the number is 30 — a retry the agent is waiting for, said
+    // as a time rather than as silence.
+    expect(api.solanaLinkStatus()).toMatch(/^not linked yet — last attempt failed: .*\(retrying in 30s\)$/);
+  });
+
+  it('a settled answer replaces the transient one, and outranks it in a failed request', async () => {
+    let attempts = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url.endsWith('/me')) {
+          attempts++;
+          if (attempts === 1) throw new TypeError('fetch failed');
+          return new Response(JSON.stringify({ user: { id: 'u', solanaAddress: null } }), { status: 200 });
+        }
+        if (url.includes('/nonce')) return new Response(JSON.stringify({ nonce: 'abc' }), { status: 200 });
+        if (url.includes('/link-solana')) {
+          return new Response(JSON.stringify({ error: 'that wallet belongs to another account' }), { status: 409 });
+        }
+        if (init?.method === 'POST') return new Response(JSON.stringify({ error: 'prove ownership of your Solana wallet' }), { status: 400 });
+        return new Response(JSON.stringify({}), { status: 200 });
+      }),
+    );
+    const api = new HashlockClient(cfg);
+    await api.ensureSolanaLinked(); // transient
+    await api.ensureSolanaLinked(); // settled: 409
+    expect(api.solanaLinkStatus()).toBe('that wallet belongs to another account');
+    // And the request that fails FOR that reason carries it, rather than the stale transport blip.
+    await expect(api.createRfq({} as never)).rejects.toThrow(/another account/);
+  });
+
+  it('appends the TRANSIENT reason to a request that failed for the missing link', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url.endsWith('/me')) throw new TypeError('fetch failed');
+        if (url.includes('/nonce')) return new Response(JSON.stringify({ nonce: 'abc' }), { status: 200 });
+        if (init?.method === 'POST') return new Response(JSON.stringify({ error: 'prove ownership of your Solana wallet' }), { status: 400 });
+        return new Response(JSON.stringify({}), { status: 200 });
+      }),
+    );
+    const api = new HashlockClient(cfg);
+    // Nothing settled ever happens here, which is exactly the case that used to explain nothing: the
+    // agent was told to prove ownership by the very client that had just failed trying.
+    await expect(api.createRfq({} as never)).rejects.toThrow(/prove ownership.*fetch failed/s);
+  });
+
+  it('me({ link: false }) starts no second attempt behind a caller that already awaited one', async () => {
+    let linkPosts = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.includes('/link-solana')) {
+          linkPosts++;
+          return new Response(JSON.stringify({ error: 'slow down' }), { status: 429 });
+        }
+        if (url.endsWith('/me')) return new Response(JSON.stringify({ user: { id: 'u', solanaAddress: null } }), { status: 200 });
+        return new Response(JSON.stringify({ nonce: 'abc' }), { status: 200 });
+      }),
+    );
+    const api = new HashlockClient(cfg);
+    await api.ensureSolanaLinked();
+    const before = linkPosts;
+    await api.me({ link: false }); // what whoami does
+    expect(linkPosts).toBe(before);
+    // …and the default still kicks one off for every other caller. The 429 floor blocks it here, which
+    // is why this asserts the CALL rather than a second POST: the point is that whoami's read is not
+    // the thing that starts one.
+    expect(before).toBeGreaterThan(0);
   });
 
   it('reports a conflicting account link from the ACCOUNT, with no attempt made at all', () => {
