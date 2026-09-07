@@ -129,6 +129,7 @@ export interface User {
   evmAddress: string | null;
   tronAddress: string | null;
   btcAddress: string | null;
+  solanaAddress: string | null;
   telegramId: string | null;
 }
 
@@ -276,10 +277,9 @@ export class HashlockClient {
 
     const res = await this.req<{ token: string; user: User }>(path, { auth: false, body: { address, message, signature } });
     this.token = res.token;
-    await this.linkSolana();
   }
 
-  private solanaLinked = false;
+  private linkingSolana: Promise<void> | null = null;
   /**
    * Prove the agent owns its Solana wallet, so the account row carries the address.
    *
@@ -287,29 +287,58 @@ export class HashlockClient {
    * Solana unless users.solanaAddress is set, and setSwapAddress writes the address book, not that
    * column. Without this the agent could only ever be the taker on a Solana pair — half a rail.
    *
-   * Best-effort and one attempt per process: the wallet may already belong to another account (409),
-   * which no amount of retrying fixes, and a login that fails because of it would be worse than a
-   * session that can still browse, quote and settle every other chain.
+   * Called where it is NEEDED rather than after login: HASHLOCK_TOKEN is a first-class auth mode, and
+   * with it login() never runs, so a hook there covered the one path that needs no help.
    */
-  private async linkSolana(): Promise<void> {
-    if (this.solanaLinked || !this.cfg.solanaKey) return;
-    this.solanaLinked = true;
-    try {
-      const s = this.solanaSigner();
-      const { nonce } = await this.req<{ nonce: string }>('/auth/siwe/nonce', { auth: false });
-      const message = `Hashlock Markets wants you to sign in.\n\nAddress: ${s.address}\nNonce: ${nonce}\nIssued At: ${new Date().toISOString()}`;
-      await this.req('/me/link-solana', { body: { address: s.address, message, signature: s.signLoginMessage(message) } });
-    } catch {
-      /* already linked elsewhere, or the API is old — settlement on other chains must still work */
-    }
+  async ensureSolanaLinked(): Promise<void> {
+    if (!this.cfg.solanaKey) return;
+    // Cached as the PROMISE, so concurrent callers share one attempt; cleared on failure so a network
+    // blip does not disable this for the life of the process the way a flag set up-front would.
+    this.linkingSolana ??= this.linkSolanaOnce().catch((e) => {
+      this.linkingSolana = null;
+      throw e;
+    });
+    await this.linkingSolana.catch(() => undefined);
   }
 
-  /** The addresses this process can actually sign for, whatever the account row says. */
-  localSigners(): Record<string, string> {
+  private async linkSolanaOnce(): Promise<void> {
+    const s = this.solanaSigner();
+    const me = (await this.me()).user;
+    if (me?.solanaAddress === s.address) return; // already ours
+    if (me?.solanaAddress) {
+      // NEVER overwrite. /me/link-solana 409s only for ANOTHER account's wallet; for this account it
+      // reassigns the column unconditionally — which would silently replace a Phantom wallet the user
+      // linked in the web app with the agent's key, and then refuse their next order for a balance the
+      // agent does not have. me.ts warns about exactly this on its own passive-sync path.
+      throw new Error(`this account is linked to Solana wallet ${me.solanaAddress}, not the agent's ${s.address}`);
+    }
+    const { nonce } = await this.req<{ nonce: string }>('/auth/siwe/nonce', { auth: false });
+    const message = `Hashlock Markets wants you to sign in.\n\nAddress: ${s.address}\nNonce: ${nonce}\nIssued At: ${new Date().toISOString()}`;
+    await this.req('/me/link-solana', { body: { address: s.address, message, signature: s.signLoginMessage(message) } });
+  }
+
+  /**
+   * The addresses this process can actually sign for, whatever the account row says. Async because the
+   * BTC signer needs the network from /config — and leaving Bitcoin out for that reason would have made
+   * an agent holding HASHLOCK_BTC_KEY fall back to the account's address, which may be an embedded
+   * wallet it has no key for, and build a BTC leg it cannot sign.
+   *
+   * A bad key is reported per family rather than thrown: whoami is the tool an agent calls to check its
+   * auth, and one malformed key should not turn that answer into an error envelope.
+   */
+  async localSigners(): Promise<Record<string, string>> {
     const out: Record<string, string> = {};
-    if (this.cfg.evmKey) out.evm = this.evmSigner().address;
-    if (this.cfg.tronKey) out.tron = this.tronSigner().address;
-    if (this.cfg.solanaKey) out.solana = this.solanaSigner().address;
+    const put = async (name: string, get: () => string | Promise<string>) => {
+      try {
+        out[name] = await get();
+      } catch (e) {
+        out[name] = `unusable key: ${(e as Error).message}`;
+      }
+    };
+    if (this.cfg.evmKey) await put('evm', () => this.evmSigner().address);
+    if (this.cfg.tronKey) await put('tron', () => this.tronSigner().address);
+    if (this.cfg.solanaKey) await put('solana', () => this.solanaSigner().address);
+    if (this.cfg.btcKey) await put('btc', async () => (await this.btcSigner()).address);
     return out;
   }
 
@@ -351,7 +380,11 @@ export class HashlockClient {
     return this.req<{ rfqs: Rfq[] }>(`/rfqs${qs.size ? `?${qs}` : ''}`, { auth: false });
   };
   getRfq = (id: string) => this.req<{ rfq: Rfq }>(`/rfqs/${id}`, { auth: false });
-  createRfq = (body: Record<string, unknown>) => this.req<{ rfq: Rfq }>('/rfqs', { body });
+  createRfq = async (body: Record<string, unknown>) => {
+    // Before the server can refuse an order whose give leg is Solana for an unproven wallet.
+    await this.ensureSolanaLinked();
+    return this.req<{ rfq: Rfq }>('/rfqs', { body });
+  };
   cancelRfq = (id: string) => this.req<{ rfq: Rfq }>(`/rfqs/${id}/cancel`, { body: {} });
   postQuote = (id: string, quoteAmount: string) =>
     this.req<{ quote: unknown; thread: Thread }>(`/rfqs/${id}/quotes`, { body: { quoteAmount } });

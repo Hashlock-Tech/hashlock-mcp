@@ -73,8 +73,8 @@ describe('SolanaSigner', () => {
   });
 
   it('refuses a transaction that never mentions the escrow it claims to settle', () => {
-    // The floor under "sign what the server built": one signature and the agent as payer is also the
-    // shape of a transfer emptying this wallet, and a drain cannot name the escrow and still drain.
+    // Catches a CONFUSED server — a stale build, the wrong leg — when the caller has an independent
+    // escrow to compare against. It does not bound a hostile one; see the note in chains/solana.ts.
     expect(() => new SolanaSigner(SECRET).signTransaction(LEGACY, NOT_IN_TX)).toThrow(/never mentions escrow/);
   });
 

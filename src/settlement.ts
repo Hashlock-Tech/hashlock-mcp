@@ -31,9 +31,17 @@ async function settleSolanaLeg(
   leg: Leg,
   action: 'fund' | 'claim' | 'refund',
   body: Record<string, unknown> = {},
+  knownEscrow?: string | null,
 ): Promise<string> {
   const built = await api.buildLeg(swapId, leg, action, body);
-  const signed = api.solanaSigner().signTransaction(built.transactionBase64, built.escrow);
+  if (!built.escrow) throw new Error('the API did not name an escrow for this leg');
+  // Compare against the escrow the WATCHER recorded when it saw the funding, not the one this same
+  // response just asserted — otherwise the check is the server marking its own homework. Only a claim
+  // or refund has that: at funding time the escrow does not exist yet.
+  if (knownEscrow && knownEscrow !== built.escrow) {
+    throw new Error(`the API built a transaction for escrow ${built.escrow}, but this leg was funded at ${knownEscrow}`);
+  }
+  const signed = api.solanaSigner().signTransaction(built.transactionBase64, knownEscrow ?? built.escrow);
   try {
     return (await api.broadcastSigned('solana', signed)).txid;
   } catch (e) {
@@ -170,7 +178,7 @@ export async function claimMyLeg(
     if (!swap.onchainSwapId) throw new Error('TRON on-chain swapId unknown (leg not funded yet)');
     tx = await api.tronSigner().claim(await api.tronChain(), swap.onchainSwapId, secretHex);
   } else if (fam === 'svm') {
-    tx = await settleSolanaLeg(api, swap.id, view.leg, 'claim', { secret: secretHex });
+    tx = await settleSolanaLeg(api, swap.id, view.leg, 'claim', { secret: secretHex }, view.htlcAddress);
   } else {
     if (!view.htlcAddress || !view.redeemScript) throw new Error('BTC HTLC/redeem script unknown (leg not funded yet)');
     const signer = await api.btcSigner();

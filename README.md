@@ -63,10 +63,13 @@ The first configured key (EVM → TRON → BTC) mints the session; each key also
 | `HASHLOCK_TOKEN` | — | a ready JWT (alternative to a key) |
 
 `HASHLOCK_SOLANA_KEY` is base58 — the 64-byte export a wallet gives you, or a bare 32-byte seed. It does
-not log the agent in; set it alongside whichever key does. Solana is also the one chain whose
+not mint the session; set it alongside whichever key does. It IS used to prove ownership of the wallet
+(a signed, nonce-bearing message to `/me/link-solana`) the first time the agent posts an order, because
+an order whose give leg is Solana is refused without it. If the account is already linked to a different
+Solana wallet, that link is left alone and the order fails with both addresses named. Solana is also the one chain whose
 transactions this package does not build: the escrow's ADDRESS is a hash of the agreed terms, so the
-server composes each one and the agent signs the bytes it is handed. Set the agent's Solana address as
-its settlement address with `set_settlement_address` before funding.
+server composes each one and the agent signs the bytes it is handed. Set the agent's Solana address — `whoami` returns it as
+`localSigners.solana` — as its settlement address with `set_settlement_address` before funding.
 
 With none set, read-only tools (`list_assets`, `list_open_rfqs`, `get_rfq`) still work. Use dedicated **testnet** keys.
 

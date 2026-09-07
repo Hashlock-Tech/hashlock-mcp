@@ -15,13 +15,20 @@ import { createPrivateKey, createPublicKey, sign as edSign } from 'node:crypto';
  * account key 0 must be this key. A transaction shaped differently is refused, because signing the
  * wrong slot produces bytes the chain rejects for a missing signature after the agent has spent a fee.
  *
- * AND IT REFUSES ANYTHING THAT DOES NOT TOUCH THE ESCROW. Signing bytes someone else composed is a
- * wider trust than the other three rails take — they build their own call, so a hostile or hijacked
- * API is confined to a fixed ABI, while "one signature, payer is you" is also the exact shape of a
- * transfer emptying this wallet. The escrow address is the one thing in the response that a drain
- * cannot fake and still be a drain: every fund, claim and refund names it, so it must appear among the
- * transaction's account keys. That is a floor, not a proof — the instruction data is still taken on
- * faith, and pinning the program id needs GET /config to publish it, which it does not yet.
+ * WHAT THE ESCROW CHECK IS, AND WHAT IT IS NOT. The transaction must name the escrow it claims to
+ * settle. Read that as a check against a CONFUSED server — a wrong leg, a stale build, a swap mixed up
+ * — and not against a hostile one, because the caller decides what to compare against. When the escrow
+ * is taken from the same response as the transaction, a compromised API supplies both and the check
+ * proves nothing; `settleSolanaLeg` therefore prefers the address the WATCHER recorded on the swap row,
+ * which the server cannot invent after the fact. On a fund there is no such anchor yet — the escrow
+ * does not exist until this very transaction lands — so that path does trust the API, exactly as far as
+ * HASHLOCK_API_URL is trusted.
+ *
+ * An earlier version of this note claimed a drain "cannot fake it and still be a drain". It can: the
+ * escrow key can sit in the account list unused while a SystemProgram.transfer empties this wallet. The
+ * real bound would be deriving the escrow address here, which means this package carrying the terms
+ * hash and the PDA search; that is the trade the file header above declines, and declining it honestly
+ * is better than a guard that reads stronger than it is.
  */
 
 const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
