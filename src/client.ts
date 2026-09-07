@@ -322,6 +322,7 @@ export class HashlockClient {
         signer = this.solanaSigner();
       } catch (e) {
         this.solanaLink = { failed: `unusable HASHLOCK_SOLANA_KEY: ${(e as Error).message}` };
+        this.solanaLinkRetry = null; // settled clears transient, on EVERY settled path and not just one
         return;
       }
       try {
@@ -396,13 +397,19 @@ export class HashlockClient {
     try {
       return await fn();
     } catch (e) {
-      // The settled reason outranks the transient one when both exist: "this wallet belongs to another
-      // account" is the answer, and "the last attempt hit a 429" is only how far we got.
+      // Settled first — though the two are mutually exclusive by construction rather than by this
+      // order: every path that records a settled failure clears the transient one, and once settled no
+      // further attempt runs to set it again. The order says which would win if that ever stopped being
+      // true; it is not resolving a contest that can happen today.
+      //
+      // The transient case reuses notLinkedYet() instead of building a second sentence, because the
+      // first version of it dropped the one thing this change added — a 429 said "the Solana wallet is
+      // not linked: slow down" and never mentioned that a retry was already scheduled.
       const reason =
         this.solanaLink && 'failed' in this.solanaLink
           ? this.solanaLink.failed
           : this.solanaLinkRetry
-            ? `the Solana wallet is not linked: ${this.solanaLinkRetry}`
+            ? this.notLinkedYet()
             : null;
       // Matched on the messages the server ACTUALLY sends, not on the word "solana": only
       // assertOwnsGiveFamily names the chain. A refused quote says "insufficient SOL: …" and a refused
@@ -503,9 +510,8 @@ export class HashlockClient {
    * The account, and the last place the Solana link can be established for an agent that neither posts
    * an order nor quotes: users.solanaAddress is what puts it in the feed for a private order aimed at
    * its Solana wallet, and what lets it answer one. Best-effort here — whoami must still answer when
-   * the link cannot be made, and it reports the reason in `localSigners` instead.
-   */
-  /**
+   * the link cannot be made, and the reason reaches the agent through `solanaLink`.
+   *
    * `link: false` for a caller that has ALREADY awaited ensureSolanaLinked — whoami does. Without it
    * that sequence started a SECOND attempt: the awaited one fails transiently, which nulls linkingSolana
    * and records no address, so this line sees a falsy solanaAddress and fires again un-awaited — and

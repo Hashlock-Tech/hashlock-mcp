@@ -155,7 +155,9 @@ describe('the Solana link is best-effort', () => {
     await api.ensureSolanaLinked();
     // The floor is 30s and it was just set, so the number is 30 — a retry the agent is waiting for, said
     // as a time rather than as silence.
-    expect(api.solanaLinkStatus()).toMatch(/^not linked yet — last attempt failed: .*\(retrying in 30s\)$/);
+    // `\d+` rather than 30: Math.ceil drops to 29 the moment a second passes between the 429 being
+    // recorded and this read, which a cold start on a shared box can spend on key derivation alone.
+    expect(api.solanaLinkStatus()).toMatch(/^not linked yet — last attempt failed: .*\(retrying in \d+s\)$/);
   });
 
   it('a settled answer replaces the transient one, and outranks it in a failed request', async () => {
@@ -200,28 +202,21 @@ describe('the Solana link is best-effort', () => {
     await expect(api.createRfq({} as never)).rejects.toThrow(/prove ownership.*fetch failed/s);
   });
 
-  it('me({ link: false }) starts no second attempt behind a caller that already awaited one', async () => {
-    let linkPosts = 0;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (url: string) => {
-        if (url.includes('/link-solana')) {
-          linkPosts++;
-          return new Response(JSON.stringify({ error: 'slow down' }), { status: 429 });
-        }
-        if (url.endsWith('/me')) return new Response(JSON.stringify({ user: { id: 'u', solanaAddress: null } }), { status: 200 });
-        return new Response(JSON.stringify({ nonce: 'abc' }), { status: 200 });
-      }),
+  it('me({ link: false }) starts no attempt, and the default still does', async () => {
+    mockFetch((url) =>
+      url.endsWith('/me')
+        ? { json: { user: { id: 'u', solanaAddress: null } } }
+        : { json: { nonce: 'abc' } },
     );
     const api = new HashlockClient(cfg);
-    await api.ensureSolanaLinked();
-    const before = linkPosts;
-    await api.me({ link: false }); // what whoami does
-    expect(linkPosts).toBe(before);
-    // …and the default still kicks one off for every other caller. The 429 floor blocks it here, which
-    // is why this asserts the CALL rather than a second POST: the point is that whoami's read is not
-    // the thing that starts one.
-    expect(before).toBeGreaterThan(0);
+    // SPIED, not counted through the network. An earlier version of this test set a 429 first and then
+    // counted POSTs — which the 429 floor suppresses on its own, so it passed with the flag ignored
+    // entirely. What is being asserted is that me() does not START the attempt, and that is the call.
+    const spy = vi.spyOn(api, 'ensureSolanaLinked').mockResolvedValue(undefined);
+    await api.me({ link: false }); // what whoami does, having already awaited one itself
+    expect(spy).not.toHaveBeenCalled();
+    await api.me(); // every other caller still gets the background link
+    expect(spy).toHaveBeenCalledTimes(1);
   });
 
   it('reports a conflicting account link from the ACCOUNT, with no attempt made at all', () => {
