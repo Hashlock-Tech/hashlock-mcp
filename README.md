@@ -69,7 +69,7 @@ an order whose give leg is Solana is refused without it. If the account is alrea
 Solana wallet, that link is left alone and the order fails with both addresses named. Solana is also the one chain whose
 transactions this package does not build: the escrow's ADDRESS is a hash of the agreed terms, so the
 server composes each one and the agent signs the bytes it is handed. Set the agent's Solana address — `whoami` returns it as
-`localSigners.solana` — as its settlement address with `set_settlement_address` before funding.
+`localSigners.addresses.solana` — as its settlement address with `set_settlement_address` before funding.
 
 With none set, read-only tools (`list_assets`, `list_open_rfqs`, `get_rfq`) still work. Use dedicated **testnet** keys.
 

@@ -279,7 +279,9 @@ export class HashlockClient {
     this.token = res.token;
   }
 
-  private linkingSolana: Promise<void> | null = null;
+  private linkingSolana: Promise<{ ok: true } | { retry: true } | { failed: string }> | null = null;
+  /** Settled outcome of the link attempt: done, or a permanent reason worth telling the agent. */
+  private solanaLink: { done: true } | { failed: string } | null = null;
   /**
    * Prove the agent owns its Solana wallet, so the account row carries the address.
    *
@@ -292,18 +294,44 @@ export class HashlockClient {
    */
   async ensureSolanaLinked(): Promise<void> {
     if (!this.cfg.solanaKey) return;
-    // Cached as the PROMISE, so concurrent callers share one attempt; cleared on failure so a network
-    // blip does not disable this for the life of the process the way a flag set up-front would.
-    this.linkingSolana ??= this.linkSolanaOnce().catch((e) => {
-      this.linkingSolana = null;
-      throw e;
-    });
-    await this.linkingSolana.catch(() => undefined);
+    if (this.solanaLink) {
+      // A PERMANENT failure is raised every time rather than swallowed. The one that matters names the
+      // wallet already on the account and the agent's own — swallowing it left the server's generic
+      // "prove ownership of your Solana wallet" as the only thing the agent saw, which tells it to do
+      // the very thing this client just declined to do.
+      if ('failed' in this.solanaLink) throw new Error(this.solanaLink.failed);
+      return;
+    }
+    // Cached as the PROMISE so concurrent callers share one attempt, and the outcome is RETURNED rather
+    // than read back off the field afterwards — which is also what keeps the narrowing honest.
+    this.linkingSolana ??= (async (): Promise<{ ok: true } | { retry: true } | { failed: string }> => {
+      try {
+        await this.linkSolanaOnce();
+        this.solanaLink = { done: true };
+        return { ok: true };
+      } catch (e) {
+        // 5xx and transport failures are transient: forget the attempt so a later call retries, and stay
+        // quiet, because the operation the caller actually wants may not need Solana at all. Anything
+        // else is settled — a 409 for another account's wallet, or our own refusal above — and retrying
+        // it every time would be a silent nonce fetch and a 409 on each call.
+        if (e instanceof ApiError && e.status >= 500) {
+          this.linkingSolana = null;
+          return { retry: true };
+        }
+        const failed = (e as Error).message;
+        this.solanaLink = { failed };
+        return { failed };
+      }
+    })();
+    const outcome = await this.linkingSolana;
+    if ('failed' in outcome) throw new Error(outcome.failed);
   }
 
   private async linkSolanaOnce(): Promise<void> {
     const s = this.solanaSigner();
-    const me = (await this.me()).user;
+    // Read the profile directly, not through me(): me() calls ensureSolanaLinked, and going back through
+    // it here would leave this awaiting the promise it is itself running.
+    const me = (await this.req<{ user: User | null }>('/me')).user;
     if (me?.solanaAddress === s.address) return; // already ours
     if (me?.solanaAddress) {
       // NEVER overwrite. /me/link-solana 409s only for ANOTHER account's wallet; for this account it
@@ -326,20 +354,25 @@ export class HashlockClient {
    * A bad key is reported per family rather than thrown: whoami is the tool an agent calls to check its
    * auth, and one malformed key should not turn that answer into an error envelope.
    */
-  async localSigners(): Promise<Record<string, string>> {
-    const out: Record<string, string> = {};
+  async localSigners(): Promise<{ addresses: Record<string, string>; unusable?: Record<string, string> }> {
+    const addresses: Record<string, string> = {};
+    const unusable: Record<string, string> = {};
+    // Failures go in their OWN field. An agent reads this map to pick a settlement address, and an
+    // error string sitting where an address belongs passes a truthiness check and gets submitted.
     const put = async (name: string, get: () => string | Promise<string>) => {
       try {
-        out[name] = await get();
+        addresses[name] = await get();
       } catch (e) {
-        out[name] = `unusable key: ${(e as Error).message}`;
+        // btc resolves its network through /config, so an API outage lands here for a perfectly good
+        // key — which is why this says "could not be read", not "bad key".
+        unusable[name] = `could not be read: ${(e as Error).message}`;
       }
     };
     if (this.cfg.evmKey) await put('evm', () => this.evmSigner().address);
     if (this.cfg.tronKey) await put('tron', () => this.tronSigner().address);
     if (this.cfg.solanaKey) await put('solana', () => this.solanaSigner().address);
     if (this.cfg.btcKey) await put('btc', async () => (await this.btcSigner()).address);
-    return out;
+    return Object.keys(unusable).length ? { addresses, unusable } : { addresses };
   }
 
   // ── assets ──────────────────────────────────────────────────────────────────
@@ -374,20 +407,30 @@ export class HashlockClient {
   }
 
   // ── endpoints ───────────────────────────────────────────────────────────────
-  me = () => this.req<{ user: User | null }>('/me');
+  /**
+   * The account, and the last place the Solana link can be established for an agent that neither posts
+   * an order nor quotes: users.solanaAddress is what puts it in the feed for a private order aimed at
+   * its Solana wallet, and what lets it answer one. Best-effort here — whoami must still answer when
+   * the link cannot be made, and it reports the reason in `localSigners` instead.
+   */
+  me = async () => {
+    await this.ensureSolanaLinked().catch(() => undefined);
+    return this.req<{ user: User | null }>('/me');
+  };
   listRfqs = (q: { baseAssetId?: string; quoteAssetId?: string; direction?: string } = {}) => {
     const qs = new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][]);
     return this.req<{ rfqs: Rfq[] }>(`/rfqs${qs.size ? `?${qs}` : ''}`, { auth: false });
   };
   getRfq = (id: string) => this.req<{ rfq: Rfq }>(`/rfqs/${id}`, { auth: false });
   createRfq = async (body: Record<string, unknown>) => {
-    // Before the server can refuse an order whose give leg is Solana for an unproven wallet.
     await this.ensureSolanaLinked();
     return this.req<{ rfq: Rfq }>('/rfqs', { body });
   };
   cancelRfq = (id: string) => this.req<{ rfq: Rfq }>(`/rfqs/${id}/cancel`, { body: {} });
-  postQuote = (id: string, quoteAmount: string) =>
-    this.req<{ quote: unknown; thread: Thread }>(`/rfqs/${id}/quotes`, { body: { quoteAmount } });
+  postQuote = async (id: string, quoteAmount: string) => {
+    await this.ensureSolanaLinked();
+    return this.req<{ quote: unknown; thread: Thread }>(`/rfqs/${id}/quotes`, { body: { quoteAmount } });
+  };
 
   getThread = (id: string) =>
     this.req<{ thread: Thread; rfq: Rfq; messages: Message[]; swap: Swap | null }>(`/threads/${id}`);
@@ -395,8 +438,10 @@ export class HashlockClient {
   propose = (id: string, quoteAmount: string) =>
     this.req<{ thread: Thread }>(`/threads/${id}/propose`, { body: { quoteAmount } });
   acceptProposal = (id: string) => this.req<{ thread: Thread }>(`/threads/${id}/accept-proposal`, { body: {} });
-  accept = (id: string, hashlock?: string) =>
-    this.req<{ thread: Thread; swap?: Swap }>(`/threads/${id}/accept`, { body: hashlock ? { hashlock } : {} });
+  accept = async (id: string, hashlock?: string) => {
+    await this.ensureSolanaLinked();
+    return this.req<{ thread: Thread; swap?: Swap }>(`/threads/${id}/accept`, { body: hashlock ? { hashlock } : {} });
+  };
   reject = (id: string) => this.req(`/threads/${id}/reject`, { body: {} });
 
   myRfqs = () => this.req<{ rfqs: Rfq[] }>('/me/rfqs');
