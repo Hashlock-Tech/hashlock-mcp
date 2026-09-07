@@ -18,6 +18,9 @@ const OTHER_PAYER =
   'AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAED/RckOFqgx1tk+3jNYC+h2ZH96/drE8WO1wLqyDXp9hjqSmxj4pxSCr71UHsTLsX5lUd2rr6+e5JCHuppFEbSLAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAgIAAQwCAAAAAQAAAAAAAAA=';
 
 const SPKI = Buffer.from('302a300506032b6570032100', 'hex');
+/** Account key 1 of the fixtures — a real key in the transaction, standing in for the escrow. */
+const IN_TX = 'J2xccRtuG43drESLYznHhLhQkLTdfepcKYbiQ9BsJVaf';
+const NOT_IN_TX = 'So11111111111111111111111111111111111111112';
 
 /** Does the signature in slot 0 actually open under `PUB` for the message it covers? */
 function slotZeroVerifies(base64: string, pubB58: string): boolean {
@@ -46,27 +49,33 @@ describe('SolanaSigner', () => {
 
   it('signs a legacy transaction so slot 0 verifies, without changing its length', () => {
     const s = new SolanaSigner(SECRET);
-    const signed = s.signTransaction(LEGACY);
+    const signed = s.signTransaction(LEGACY, IN_TX);
     expect(Buffer.from(signed, 'base64')).toHaveLength(Buffer.from(LEGACY, 'base64').length);
     expect(slotZeroVerifies(LEGACY, PUB)).toBe(false); // the fixture is unsigned: zeroed slot
     expect(slotZeroVerifies(signed, PUB)).toBe(true);
   });
 
   it('signs a v0 transaction too — the version byte must not be read as a header', () => {
-    const signed = new SolanaSigner(SECRET).signTransaction(V0);
+    const signed = new SolanaSigner(SECRET).signTransaction(V0, IN_TX);
     expect(slotZeroVerifies(signed, PUB)).toBe(true);
   });
 
   it('refuses a transaction whose first account key is somebody else', () => {
     // The failure this prevents is silent otherwise: a signature in the wrong slot is bytes the chain
     // rejects for a missing signature, after the agent has already paid to broadcast them.
-    expect(() => new SolanaSigner(SECRET).signTransaction(OTHER_PAYER)).toThrow(/must be signed by/);
+    expect(() => new SolanaSigner(SECRET).signTransaction(OTHER_PAYER, IN_TX)).toThrow(/must be signed by/);
   });
 
   it('refuses a transaction that wants more than one signature', () => {
     const tx = Buffer.from(LEGACY, 'base64');
     const two = Buffer.concat([Buffer.from([2]), Buffer.alloc(64), tx.subarray(1)]);
-    expect(() => new SolanaSigner(SECRET).signTransaction(two.toString('base64'))).toThrow(/single-signature/);
+    expect(() => new SolanaSigner(SECRET).signTransaction(two.toString('base64'), IN_TX)).toThrow(/single-signature/);
+  });
+
+  it('refuses a transaction that never mentions the escrow it claims to settle', () => {
+    // The floor under "sign what the server built": one signature and the agent as payer is also the
+    // shape of a transfer emptying this wallet, and a drain cannot name the escrow and still drain.
+    expect(() => new SolanaSigner(SECRET).signTransaction(LEGACY, NOT_IN_TX)).toThrow(/never mentions escrow/);
   });
 
   it('refuses a key that is neither 32 nor 64 bytes', () => {

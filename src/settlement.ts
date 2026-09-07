@@ -33,7 +33,7 @@ async function settleSolanaLeg(
   body: Record<string, unknown> = {},
 ): Promise<string> {
   const built = await api.buildLeg(swapId, leg, action, body);
-  const signed = api.solanaSigner().signTransaction(built.transactionBase64);
+  const signed = api.solanaSigner().signTransaction(built.transactionBase64, built.escrow);
   try {
     return (await api.broadcastSigned('solana', signed)).txid;
   } catch (e) {

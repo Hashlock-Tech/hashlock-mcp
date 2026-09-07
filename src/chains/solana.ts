@@ -14,6 +14,14 @@ import { createPrivateKey, createPublicKey, sign as edSign } from 'node:crypto';
  * so slot 0 is ours. Both halves of that are CHECKED rather than assumed: the count must be 1, and
  * account key 0 must be this key. A transaction shaped differently is refused, because signing the
  * wrong slot produces bytes the chain rejects for a missing signature after the agent has spent a fee.
+ *
+ * AND IT REFUSES ANYTHING THAT DOES NOT TOUCH THE ESCROW. Signing bytes someone else composed is a
+ * wider trust than the other three rails take — they build their own call, so a hostile or hijacked
+ * API is confined to a fixed ABI, while "one signature, payer is you" is also the exact shape of a
+ * transfer emptying this wallet. The escrow address is the one thing in the response that a drain
+ * cannot fake and still be a drain: every fund, claim and refund names it, so it must appear among the
+ * transaction's account keys. That is a floor, not a proof — the instruction data is still taken on
+ * faith, and pinning the program id needs GET /config to publish it, which it does not yet.
  */
 
 const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
@@ -84,21 +92,42 @@ export class SolanaSigner {
     this.address = base58Encode(this.pubkey);
   }
 
-  /** Sign a server-built transaction. In and out are base64, which is what /tx/broadcast takes. */
-  signTransaction(transactionBase64: string): string {
+  /**
+   * Sign a server-built transaction. In and out are base64, which is what /tx/broadcast takes.
+   *
+   * @param escrow the escrow address the server said this transaction settles. Required, because it is
+   *   the only check standing between this signer and a transfer draining the agent's wallet.
+   */
+  signTransaction(transactionBase64: string, escrow: string): string {
     const tx = Buffer.from(transactionBase64, 'base64');
     const { value: sigCount, next: sigStart } = readCompactU16(tx, 0);
     if (sigCount !== 1) throw new Error(`expected a single-signature transaction, got ${sigCount} slots`);
     const message = tx.subarray(sigStart + 64);
-    // Account key 0 must be us. Skip the version byte a v0 message starts with (high bit set), then the
-    // three header counts, then the key-array length.
+    // Skip the version byte a v0 message starts with (high bit set), then the three header counts, then
+    // the key-array length. What follows is `count` × 32 bytes of static account keys.
     const afterVersion = message[0] !== undefined && (message[0] & 0x80) !== 0 ? 1 : 0;
-    const { next: keysAt } = readCompactU16(message, afterVersion + 3);
-    const firstKey = message.subarray(keysAt, keysAt + 32);
-    if (!firstKey.equals(this.pubkey)) {
-      throw new Error(`this transaction must be signed by ${base58Encode(firstKey)}, not ${this.address}`);
+    const { value: keyCount, next: keysAt } = readCompactU16(message, afterVersion + 3);
+    const keyAt = (i: number): Buffer => message.subarray(keysAt + i * 32, keysAt + i * 32 + 32);
+    if (keysAt + keyCount * 32 > message.length) throw new Error('transaction ended inside its account keys');
+
+    if (!keyAt(0).equals(this.pubkey)) {
+      throw new Error(`this transaction must be signed by ${base58Encode(keyAt(0))}, not ${this.address}`);
     }
+    // NOT the instruction count, deliberately: a priority fee adds a compute-budget instruction, so a
+    // count here would break the day the keeper grows one. The escrow's PRESENCE is what matters.
+    const wantEscrow = base58Decode(escrow);
+    let touchesEscrow = false;
+    for (let i = 0; i < keyCount; i++) if (keyAt(i).equals(wantEscrow)) touchesEscrow = true;
+    if (!touchesEscrow) {
+      throw new Error(`refusing to sign: this transaction never mentions escrow ${escrow}`);
+    }
+
     const signature = edSign(null, message, this.key);
     return Buffer.concat([tx.subarray(0, sigStart), signature, message]).toString('base64');
+  }
+
+  /** Sign a login/link message. base58, which is what POST /me/link-solana verifies. */
+  signLoginMessage(message: string): string {
+    return base58Encode(edSign(null, Buffer.from(message, 'utf8'), this.key));
   }
 }

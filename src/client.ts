@@ -276,6 +276,41 @@ export class HashlockClient {
 
     const res = await this.req<{ token: string; user: User }>(path, { auth: false, body: { address, message, signature } });
     this.token = res.token;
+    await this.linkSolana();
+  }
+
+  private solanaLinked = false;
+  /**
+   * Prove the agent owns its Solana wallet, so the account row carries the address.
+   *
+   * Signing is not enough on its own: rfq/service.ts refuses to create an order whose GIVE leg is
+   * Solana unless users.solanaAddress is set, and setSwapAddress writes the address book, not that
+   * column. Without this the agent could only ever be the taker on a Solana pair — half a rail.
+   *
+   * Best-effort and one attempt per process: the wallet may already belong to another account (409),
+   * which no amount of retrying fixes, and a login that fails because of it would be worse than a
+   * session that can still browse, quote and settle every other chain.
+   */
+  private async linkSolana(): Promise<void> {
+    if (this.solanaLinked || !this.cfg.solanaKey) return;
+    this.solanaLinked = true;
+    try {
+      const s = this.solanaSigner();
+      const { nonce } = await this.req<{ nonce: string }>('/auth/siwe/nonce', { auth: false });
+      const message = `Hashlock Markets wants you to sign in.\n\nAddress: ${s.address}\nNonce: ${nonce}\nIssued At: ${new Date().toISOString()}`;
+      await this.req('/me/link-solana', { body: { address: s.address, message, signature: s.signLoginMessage(message) } });
+    } catch {
+      /* already linked elsewhere, or the API is old — settlement on other chains must still work */
+    }
+  }
+
+  /** The addresses this process can actually sign for, whatever the account row says. */
+  localSigners(): Record<string, string> {
+    const out: Record<string, string> = {};
+    if (this.cfg.evmKey) out.evm = this.evmSigner().address;
+    if (this.cfg.tronKey) out.tron = this.tronSigner().address;
+    if (this.cfg.solanaKey) out.solana = this.solanaSigner().address;
+    return out;
   }
 
   // ── assets ──────────────────────────────────────────────────────────────────

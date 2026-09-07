@@ -166,11 +166,14 @@ export function registerHostedTools(server: McpServer, callV1: CallV1): void {
 
   server.tool(
     'broadcast_tx',
-    'Relay a transaction you signed yourself. chain ∈ {evm, tron, bitcoin}. signed = the chain-specific ' +
-      'payload: EVM a raw 0x transaction, TRON the signed transaction object, Bitcoin either a raw hex ' +
+    'Relay a transaction you signed yourself. chain ∈ {evm, tron, bitcoin, solana}. signed = the ' +
+      'chain-specific payload: EVM a raw 0x transaction, TRON the signed transaction object, Solana the ' +
+      'base64 transaction from a build step with your signature in it, Bitcoin either a raw hex ' +
       'transaction or { psbtBase64, signatureHex, preimageHex? } from a build step — the last form has ' +
       'the witness assembled here, so you never have to serialise Bitcoin script yourself.',
-    { chain: z.enum(['evm', 'tron', 'bitcoin']), signed: z.unknown() },
+    // 'solana' was missing while the build steps above already returned sign:"solana-tx" and /v1 already
+    // accepted it — so a hosted integrator could build and sign a Solana leg and then not relay it.
+    { chain: z.enum(['evm', 'tron', 'bitcoin', 'solana']), signed: z.unknown() },
     async ({ chain, signed }) => out(await callV1('/tx/broadcast', { method: 'POST', body: { chain, signed } })),
   );
 }
