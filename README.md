@@ -126,7 +126,7 @@ pnpm build && HASHLOCK_V1_URL=https://api-dev.hashlock.markets/v1 PORT=8080 pnpm
 Env: `HASHLOCK_V1_URL` (developer-API base, default `https://api.hashlock.markets/v1`) · `PORT` (default
 `8080`). Put it behind your reverse proxy at `/mcp`; `GET /health` is a liveness probe.
 
-## Tools (16)
+## Tools (17)
 
 | Tool | What it does |
 |---|---|
@@ -168,5 +168,11 @@ pnpm run build    # tsup → dist/
 pnpm run lint     # tsc --noEmit
 pnpm test         # vitest
 ```
+
+Releasing means bumping **two** version numbers, and they are not the same one: `package.json` (and
+`server.json`'s `packages[0].version`, which must match it) is the npm package, while `server.json`'s
+own top-level `version` numbers the entry in the MCP Registry. Leave the second behind and npm
+publishes happily while the registry answers `cannot publish duplicate version`. Then tag: `git tag
+v0.7.0 && git push origin v0.7.0` runs both workflows.
 
 Node ≥ 20. MIT.
