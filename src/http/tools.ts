@@ -18,6 +18,10 @@ const out = (r: { status: number; json: unknown }) => ({
   isError: r.status >= 400,
 });
 
+/** Every address on EVM, TRON, Solana and Bitcoin is alphanumeric; nothing else belongs in a signed
+ *  message or a URL path segment. See the note on wallet_proof_message for what a looser type allows. */
+const ADDRESS = z.string().regex(/^[0-9A-Za-z]{20,120}$/, 'an address is 20-120 alphanumeric characters');
+
 const qs = (o: Record<string, string | number | undefined>) => {
   const p = new URLSearchParams();
   for (const [k, v] of Object.entries(o)) if (v !== undefined && v !== '') p.set(k, String(v));
@@ -27,11 +31,11 @@ const qs = (o: Record<string, string | number | undefined>) => {
 
 export function registerHostedTools(server: McpServer, callV1: CallV1): void {
   // ── read ────────────────────────────────────────────────────────────────
-  server.tool('whoami', 'The account behind the API key and its scopes (read/taker/maker). Verify auth.', {}, async () =>
+  server.tool('whoami', 'The account behind the API key: its scopes (read/taker/maker) and, per chain, `login` (the wallet it signed in with, and where the account is PAID) plus `proven` (wallets it may TRADE from). Verify auth, and check what you may GIVE before quoting.', {}, async () =>
     out(await callV1('/me')),
   );
 
-  server.tool('list_assets', 'Tradeable asset registry: {id, chain, symbol, address|null (native), decimals}. Testnets only for now (Sepolia, TRON Nile, BTC signet).', {}, async () =>
+  server.tool('list_assets', 'Tradeable asset registry: {id, chain, symbol, address|null (native), decimals}. Testnets only for now (Sepolia, TRON Nile, BTC signet, Solana devnet).', {}, async () =>
     out(await callV1('/assets')),
   );
 
@@ -89,6 +93,64 @@ export function registerHostedTools(server: McpServer, callV1: CallV1): void {
     },
   );
 
+  // ── wallets: what this account may GIVE, and how to widen it ───────────────
+  // An account can only offer an asset on a chain it has proved a wallet on, and an API key starts with
+  // just the address its owner signed in with. These three are the whole of widening that — and they
+  // add TRADING reach only: a proof never becomes the account's payout identity, which needs a wallet
+  // session. The agent signs with its own key; nothing here holds one.
+  server.tool(
+    'wallet_proof_message',
+    'Start proving a wallet you hold: returns the EXACT message to sign for `address`, and the nonce ' +
+      'inside it. Sign that message with that wallet (EVM personal_sign · TRON signMessageV2 · Solana ' +
+      'ed25519 signMessage, base58 · Bitcoin BIP-322) and pass it to prove_wallet unchanged. The nonce ' +
+      'is single-use and short-lived, and it is NOT a login nonce — this signature cannot open a session.',
+    // ALPHANUMERIC, and bounded. This string is pasted into text a wallet will sign, and the API reads
+    // the nonce out of that text — so a newline here would let an injected `Nonce:` line choose which
+    // nonce pool the signature spends, turning a link proof into a login credential for the account.
+    // Every address on all four families is [0-9A-Za-z], so the bound costs a real caller nothing.
+    { address: ADDRESS.describe('the address you are about to prove') },
+    async ({ address }) => {
+      const r = await callV1('/wallets/nonce');
+      if (r.status >= 400) return out(r);
+      const nonce = (r.json as { nonce?: string }).nonce;
+      // Built here, not by the model: the server checks for the product marker, the words "link this
+      // wallet" and the nonce, and an agent that paraphrases any of them gets a 400 it cannot diagnose.
+      return out({
+        status: 200,
+        json: {
+          message: `Hashlock Markets — link this wallet.\n\nAddress: ${address}\nNonce: ${nonce}\nIssued At: ${new Date().toISOString()}`,
+          nonce,
+        },
+      });
+    },
+  );
+
+  server.tool(
+    'prove_wallet',
+    'Record a wallet you proved: send the message from wallet_proof_message and its signature. Needed ' +
+      'before this account can create an order that GIVES an asset on that chain. A proof only widens ' +
+      'what you may TRADE — it never changes where this account is PAID (the ramp payout address), which ' +
+      'only a wallet session can set. 409 = that wallet belongs to another account.',
+    {
+      family: z.enum(['evm', 'tron', 'solana', 'bitcoin']),
+      address: ADDRESS,
+      message: z.string(),
+      signature: z.string(),
+    },
+    async ({ family, address, message, signature }) =>
+      out(await callV1(`/wallets/${family}`, { method: 'POST', body: { address, message, signature } })),
+  );
+
+  server.tool(
+    'remove_wallet_proof',
+    'Withdraw a proof, so that wallet no longer counts as one this account can trade from. Reach for it ' +
+      'after rotating a leaked key. Login addresses are not proofs and are not removable.',
+    { address: ADDRESS },
+    // Encoded even though ADDRESS already excludes a slash: `fetch` resolves the path through `new URL`,
+    // which collapses dot-segments, so an unencoded free-form segment is a way to reach another route.
+    async ({ address }) => out(await callV1(`/wallets/${encodeURIComponent(address)}`, { method: 'DELETE' })),
+  );
+
   // ── trade (scopes enforced by /v1) ────────────────────────────────────────
   server.tool(
     'create_rfq',
@@ -104,6 +166,14 @@ export function registerHostedTools(server: McpServer, callV1: CallV1): void {
       targetAddress: z.string().optional(),
     },
     async (body) => out(await callV1('/rfqs', { method: 'POST', body })),
+  );
+
+  server.tool(
+    'cancel_rfq',
+    'Withdraw your own RFQ before a deal is agreed (scope: taker). Without this an order you posted only ' +
+      'leaves the book by expiring.',
+    { id: z.string().uuid() },
+    async ({ id }) => out(await callV1(`/rfqs/${id}/cancel`, { method: 'POST' })),
   );
 
   server.tool(

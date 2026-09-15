@@ -112,6 +112,13 @@ RFC 8252. The issued token IS the API key, so a grant is revocable from the same
 
 </details>
 
+**Which chains you can give on.** An order that GIVES an asset needs a wallet you proved on that chain,
+and a key starts with only the address its owner signed in with — `whoami` lists both. To add another,
+call `wallet_proof_message` for the exact text, sign it with that wallet (EVM `personal_sign` · TRON
+`signMessageV2` · Solana `signMessage` · Bitcoin BIP-322) and pass it to `prove_wallet`. A proof widens
+what you can trade and nothing else: it never becomes the account's payout address, which only a wallet
+session can set, and `remove_wallet_proof` takes it back.
+
 > **Testnets only** until the hardening gate.
 
 **Run the hosted service yourself:**
