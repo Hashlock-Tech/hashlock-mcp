@@ -133,12 +133,14 @@ export async function fundMyLeg(api: HashlockClient, swap: Swap, assets: Asset[]
   const fam = await api.familyOf(view.chain);
 
   if (fam === 'evm') {
-    if (!view.refund) throw new Error('set your refund address first');
-    const tx = await api.evmSigner().fund(await api.evmChain(), {
+    const signer = api.evmSigner();
+    const tx = await signer.fund(await api.evmChain(), {
       swapId: swap.id,
       hashlockHex,
       recipient: view.payout as `0x${string}`,
-      refund: view.refund as `0x${string}`,
+      // The initiator — who the escrow refunds to — is the agent's own key: the redeployed factory refuses
+      // any other caller (contract audit issue 5), so the escrow refunds to the wallet that funded it.
+      refund: signer.address,
       token: (asset?.address ?? null) as `0x${string}` | null,
       amount: BigInt(view.amount),
       timelockUnix: view.timelockUnix,

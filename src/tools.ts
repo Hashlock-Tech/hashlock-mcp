@@ -318,7 +318,7 @@ export function registerTools(server: McpServer, api: HashlockClient, secrets: S
 
   server.tool(
     'refund_leg',
-    "AUTONOMOUS SETTLEMENT: take back YOUR funded leg after its timelock has passed and the counterparty never claimed it, signing with the agent's own key. Works on every rail — EVM and TRON call the escrow, Solana and Bitcoin sign a transaction the server builds. On Bitcoin a node also rejects it until the chain's MEDIAN TIME PAST has passed the timelock, which trails real time by roughly an hour. Each rail sends the money where it was agreed it would go: the leg's refund address on EVM, Bitcoin and Solana, and on TRON whoever funded the slot. Returns the on-chain tx id.",
+    "AUTONOMOUS SETTLEMENT: take back YOUR funded leg after its timelock has passed and the counterparty never claimed it, signing with the agent's own key. Works on every rail — EVM and TRON call the escrow, Solana and Bitcoin sign a transaction the server builds. On Bitcoin a node also rejects it until the chain's MEDIAN TIME PAST has passed the timelock, which trails real time by roughly an hour. Each rail sends the money where it was agreed it would go: the leg's refund address on Bitcoin and Solana, and on EVM and TRON the wallet that funded the escrow — the agent's own key. Returns the on-chain tx id.",
     { swap_id: z.string().uuid() },
     wrapTool(async ({ swap_id }) => {
       const { swap } = await api.getSwap(swap_id);
