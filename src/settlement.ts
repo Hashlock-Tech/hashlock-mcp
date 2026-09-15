@@ -1,4 +1,4 @@
-import type { Asset, HashlockClient, Swap } from './client.js';
+import type { Asset, BtcLegTx, HashlockClient, Swap } from './client.js';
 import type { SecretStore } from './secrets.js';
 
 /**
@@ -108,7 +108,7 @@ export async function fundMyLeg(api: HashlockClient, swap: Swap, assets: Asset[]
   const fee = feeForLeg(swap, view.assetId, swap.feePayerId === me.id);
   const asset = assets.find((a) => a.id === view.assetId);
   const hashlockHex = swap.hashlock.replace(/^0x/, '');
-  const fam = familyOf(view.chain);
+  const fam = await api.familyOf(view.chain);
 
   if (fam === 'evm') {
     if (!view.refund) throw new Error('set your refund address first');
@@ -169,7 +169,7 @@ export async function claimMyLeg(
   const secretHex = (local ?? swap.secretCiphertext ?? '').replace(/^0x/, '');
   if (!secretHex) throw new Error('the preimage is not available yet (the initiator has not revealed it)');
 
-  const fam = familyOf(view.chain);
+  const fam = await api.familyOf(view.chain);
   let tx: string;
   if (fam === 'evm') {
     if (!view.htlcAddress) throw new Error('EVM clone address unknown (leg not funded yet)');
@@ -192,4 +192,65 @@ export async function claimMyLeg(
   // Tell the API so the counterparty/keeper can settle the other leg (best-effort; watchers also see it).
   await api.reveal(swap.id, { secret: secretHex, claimTx: tx, leg: view.leg }).catch(() => undefined);
   return { tx, leg: view.leg, chain: view.chain };
+}
+
+/**
+ * TAKE BACK THE LEG THE AGENT FUNDED, once its timelock has passed and the counterparty never claimed.
+ *
+ * The one settlement an autonomous agent could not perform: without it a swap that stalls leaves the
+ * agent's money in an escrow until a human goes and presses a button somewhere else. The chain is the
+ * real gate — every rail refuses a refund before its timelock — so the check below is a readable
+ * message rather than the protection.
+ *
+ * BITCOIN IS SIGNED, NOT COMPOSED, like Solana: the server builds the spend and hands back one sighash
+ * per swept input, and its finalizer assembles the refund branch. Composing that witness here would be
+ * a second copy of the redeem script, and the copy that is wrong pays a miner to reject it.
+ */
+export async function refundMyLeg(api: HashlockClient, swap: Swap): Promise<{ tx: string; leg: Leg; chain: string }> {
+  const r = await role(api, swap);
+  const view = legView(swap, r === 'maker' ? 'a' : 'b');
+  if (!view.fundTx) throw new Error(`your ${view.chain} leg was never funded — there is nothing to refund`);
+  if (view.claimTx) {
+    throw new Error(`your ${view.chain} leg was already claimed by the counterparty (${view.claimTx}) — it cannot be refunded`);
+  }
+  const now = Math.floor(Date.now() / 1000);
+  if (now < view.timelockUnix) {
+    const mins = Math.ceil((view.timelockUnix - now) / 60);
+    throw new Error(`the timelock on your ${view.chain} leg has not passed yet — about ${mins} minute(s) left`);
+  }
+  const fam = await api.familyOf(view.chain);
+
+  if (fam === 'evm') {
+    if (!view.htlcAddress) throw new Error('EVM clone address unknown (leg not funded yet)');
+    const tx = await api.evmSigner().refund(await api.evmChain(), view.htlcAddress as `0x${string}`);
+    return { tx, leg: view.leg, chain: view.chain };
+  }
+  if (fam === 'tron') {
+    if (!swap.onchainSwapId) throw new Error('TRON on-chain swapId unknown (leg not funded yet)');
+    const tx = await api.tronSigner().refund(await api.tronChain(), swap.onchainSwapId);
+    return { tx, leg: view.leg, chain: view.chain };
+  }
+  if (fam === 'svm') {
+    const tx = await settleSolanaLeg(api, swap.id, view.leg, 'refund', {}, view.htlcAddress);
+    return { tx, leg: view.leg, chain: view.chain };
+  }
+  const built = await api.buildLeg<BtcLegTx>(swap.id, view.leg, 'refund');
+  if (!built.psbtBase64 || !built.sighashHexes?.length) throw new Error('the API did not return a Bitcoin spend to sign');
+  if (!view.htlcAddress) throw new Error('BTC HTLC address unknown (leg not funded yet)');
+  if (!view.refund) throw new Error('no refund address on this leg — there is nowhere to send the coins back to');
+  const signer = await api.btcSigner();
+  // WHERE THE COINS MAY GO — the agent's own address and nowhere else. The API pays the refund branch
+  // to the key it reads out of the REDEEM SCRIPT, and a refund this key can sign at all is one whose
+  // script names this key: any other destination is either a build we could not sign or a server
+  // proposing somewhere new. The row's own refund value adds nothing here and would only widen that.
+  const signaturesHex = signer.signServerSpend({
+    psbtBase64: built.psbtBase64,
+    sighashHexes: built.sighashHexes,
+    spends: view.htlcAddress,
+    paysTo: [signer.address],
+    network: (await api.chainConfig()).btc.network,
+  });
+  // NO preimageHex: its absence is what selects the refund branch in the server's finalizer.
+  const { txid } = await api.broadcastSigned('bitcoin', { psbtBase64: built.psbtBase64, signaturesHex });
+  return { tx: txid, leg: view.leg, chain: view.chain };
 }

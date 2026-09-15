@@ -90,6 +90,35 @@ describe('auth', () => {
     expect(calls.some((u) => u.endsWith('/auth/siwe/verify'))).toBe(true);
   });
 
+  it('logs in with a Solana key alone — an agent that can only settle Solana can also authenticate', async () => {
+    const calls: string[] = [];
+    let signed: { address?: string; message?: string; signature?: string } = {};
+    mockFetch((url, init) => {
+      calls.push(url);
+      if (url.endsWith('/auth/siwe/nonce')) return { json: { nonce: 'abc123' } };
+      if (url.endsWith('/auth/solana/verify')) {
+        signed = JSON.parse(String(init?.body));
+        return { json: { token: 'jwt-sol', user: { id: 'u1' } } };
+      }
+      expect((init?.headers as Record<string, string>)?.authorization).toBe('Bearer jwt-sol');
+      return { json: { rfqs: [] } };
+    });
+    const c = new HashlockClient({
+      apiUrl: 'https://x',
+      secretsPath: '/tmp/x.json',
+      // The all-sevens seed, as in solana.test.ts.
+      solanaKey: '99eUso3aSbE9tqGSTXzo3TLfKb9RkMTURrHKQ1K7Zh3StnzFNUx8FKCPPPPpR479qsw5zv2WNBKmgiz7WqgAJfM',
+    });
+    await c.myRfqs();
+    expect(calls.some((u) => u.endsWith('/auth/solana/verify'))).toBe(true);
+    expect(calls.some((u) => u.endsWith('/auth/siwe/verify'))).toBe(false);
+    // The server's binding check rejects a signature over anything that omits these.
+    expect(signed.message).toContain('Hashlock Markets');
+    expect(signed.message).toContain(`Address: ${signed.address}`);
+    expect(signed.message).toContain('Nonce: abc123');
+    expect(signed.address).toBe('GmaDrppBC7P5ARKV8g3djiwP89vz1jLK23V2GBjuAEGB');
+  });
+
   it('re-logs-in once on 401 when a key is configured', async () => {
     let issued = 0;
     mockFetch((url, init) => {
@@ -247,5 +276,59 @@ describe('the Solana link is best-effort', () => {
     const api = new HashlockClient({ solanaKey: '1111', token: 'jwt' } as never);
     await expect(api.ensureSolanaLinked()).resolves.toBeUndefined();
     expect(api.solanaLinkStatus()).toMatch(/32 or 64 bytes/);
+  });
+});
+
+/**
+ * The family a chain belongs to, and where the answer comes from. The guess reads 'solana' out of a
+ * name and calls everything else EVM, so a second SVM chain would be settled with an EVM signer —
+ * these pin that the server's own registry wins whenever it is there.
+ */
+describe('familyOf on the client', () => {
+  const client = () => new HashlockClient({ apiUrl: 'https://x', secretsPath: '/tmp/x.json' });
+  const cfg = (chains: unknown) => ({
+    chains,
+    fee: { bps: 0, payer: 'taker' },
+    evm: { chainId: 1, factory: null },
+    tron: { sharedHtlc: null },
+    btc: { network: 'signet', esplora: null, treasury: null },
+  });
+
+  it("translates the registry's own vocabulary", async () => {
+    mockFetch(() => ({
+      // EVERY NAME HERE WOULD BE READ WRONG by the guess — it calls anything without 'bitcoin', 'tron'
+      // or 'solana' in it an EVM chain. So each row fails if the registry stops being consulted.
+      json: cfg({
+        eclipse: { family: 'svm' },
+        'kaia-testnet': { family: 'tvm' },
+        liquid: { family: 'bitcoin' },
+        'plasma-testnet': { family: 'evm' },
+      }),
+    }));
+    const c = client();
+    expect(await c.familyOf('eclipse')).toBe('svm');
+    expect(await c.familyOf('kaia-testnet')).toBe('tron');
+    expect(await c.familyOf('liquid')).toBe('btc');
+    expect(await c.familyOf('plasma-testnet')).toBe('evm');
+  });
+
+  it('refuses a family this version does not know, rather than settling it as EVM', async () => {
+    mockFetch(() => ({ json: cfg({ 'some-move-chain': { family: 'move' } }) }));
+    await expect(client().familyOf('some-move-chain')).rejects.toThrow(/cannot settle|upgrade/);
+  });
+
+  it('falls back to the name when the server does not say', async () => {
+    mockFetch(() => ({ json: cfg(undefined) }));
+    const c = client();
+    expect(await c.familyOf('solana-devnet')).toBe('svm');
+    expect(await c.familyOf('bitcoin-signet')).toBe('btc');
+    // A chain the registry carries without a family is the same case as no registry at all.
+    mockFetch(() => ({ json: cfg({ 'some-l2': {} }) }));
+    expect(await client().familyOf('some-l2')).toBe('evm');
+  });
+
+  it('falls back when /config cannot be read at all, rather than throwing mid-settlement', async () => {
+    mockFetch(() => ({ status: 500, json: { error: 'down' } }));
+    expect(await client().familyOf('solana')).toBe('svm');
   });
 });

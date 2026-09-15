@@ -3,6 +3,8 @@ import { EvmSigner, type EvmChain } from './chains/evm.js';
 import { SolanaSigner } from './chains/solana.js';
 import { TronSigner, type TronChain } from './chains/tron.js';
 import type { Config } from './config.js';
+// A VALUE import from settlement.ts, whose own import of this module is type-only and erased — no cycle.
+import { familyOf, type Family } from './settlement.js';
 
 /** A server-built Solana transaction, ready for one signature. */
 export interface SolanaLegTx {
@@ -15,8 +17,19 @@ export interface SolanaLegTx {
   lastValidBlockHeight: number;
 }
 
+/** A server-built Bitcoin spend: the PSBT and one sighash per swept input, for us to sign. */
+export interface BtcLegTx {
+  chain: string;
+  family: string;
+  sign: 'btc-sighash';
+  psbtBase64: string;
+  sighashHexes: string[];
+}
+
 /** Chain params from GET /config — what the signers need to build fund/claim txs. */
 export interface ChainConfig {
+  /** The server's chain registry: name → family, as /config reports it. Older servers omit it. */
+  chains?: Record<string, { family?: string }>;
   fee: { bps: number; payer: string };
   evm: { chainId: number | null; factory: string | null; rpcUrl?: string | null };
   tron: { sharedHtlc: string | null; fullHost?: string | null };
@@ -187,10 +200,12 @@ export class HashlockClient {
   private _tron: TronSigner | null = null;
   private _btc: BtcSigner | null = null;
   private _solana: SolanaSigner | null = null;
+  /** Who this process is, as the API last said. A re-login that answers differently is refused. */
+  private userId: string | null = null;
   private chainCfg: ChainConfig | null = null;
 
   private get hasKey(): boolean {
-    return !!(this.cfg.evmKey || this.cfg.tronKey || this.cfg.btcKey);
+    return !!(this.cfg.evmKey || this.cfg.tronKey || this.cfg.btcKey || this.cfg.solanaKey);
   }
   evmSigner(): EvmSigner {
     if (!this.cfg.evmKey) throw new Error('HASHLOCK_EVM_KEY not set');
@@ -221,6 +236,25 @@ export class HashlockClient {
     }
     return this.chainCfg;
   }
+  /**
+   * WHICH FAMILY A CHAIN BELONGS TO, taken from the server's own registry rather than guessed from its
+   * name. The guess (settlement.ts familyOf) reads 'solana' out of the string and calls everything else
+   * EVM — so the day a second SVM chain is added, an agent would settle it with an EVM signer and fund
+   * an address nobody watches. The guess stays as the fallback for a server too old to publish the
+   * registry, and for a name the registry does not carry.
+   */
+  async familyOf(chain: string): Promise<Family> {
+    const said = (await this.chainConfig().catch(() => null))?.chains?.[chain]?.family;
+    // The registry's own vocabulary, which is not this package's: it says 'tvm' and 'bitcoin'.
+    if (said === 'svm' || said === 'evm') return said;
+    if (said === 'tvm') return 'tron';
+    if (said === 'bitcoin') return 'btc';
+    // A family we have never heard of is not an EVM chain — it is a rail this version cannot settle,
+    // and guessing would sign an EVM transaction for it. Say so instead.
+    if (said) throw new Error(`this version cannot settle ${chain}: the API calls it a "${said}" chain, which it does not know — upgrade @hashlock-tech/mcp`);
+    return familyOf(chain);
+  }
+
   async evmChain(): Promise<EvmChain> {
     const cc = await this.chainConfig();
     if (!cc.evm.factory || cc.evm.chainId == null) throw new Error('EVM settlement not configured on this API');
@@ -238,13 +272,17 @@ export class HashlockClient {
   }
 
   /**
-   * Autonomous login. Picks the first configured key (EVM → TRON → BTC), signs a domain-bound nonce
-   * message, and exchanges it for a session JWT via the matching verify endpoint.
+   * Autonomous login. Picks the first configured key (EVM → TRON → BTC → Solana), signs a domain-bound
+   * nonce message, and exchanges it for a session JWT via the matching verify endpoint.
+   *
+   * SOLANA IS LAST, and only because the order had to be something: an agent holding several keys logs
+   * in as one account either way, and the others are linked to it afterwards. What matters is that it is
+   * HERE at all — a Solana-only agent could settle a Solana leg but not authenticate to reach one.
    */
   private async login(): Promise<void> {
     if (!this.hasKey) {
       throw new ApiError(
-        'unauthorized — set HASHLOCK_TOKEN, or a key for autonomous login: HASHLOCK_EVM_KEY / HASHLOCK_TRON_KEY / HASHLOCK_BTC_KEY',
+        'unauthorized — set HASHLOCK_TOKEN, or a key for autonomous login: HASHLOCK_EVM_KEY / HASHLOCK_TRON_KEY / HASHLOCK_BTC_KEY / HASHLOCK_SOLANA_KEY',
         401,
       );
     }
@@ -267,15 +305,34 @@ export class HashlockClient {
       message = `Hashlock Markets wants you to sign in.\n\nAddress: ${address}\nNonce: ${nonce}\nIssued At: ${stamp}`;
       signature = await s.signLoginMessage(message, await this.tronChain());
       path = '/auth/tron/verify';
-    } else {
+    } else if (this.cfg.btcKey) {
       const s = await this.btcSigner();
       address = s.address;
       message = `Hashlock Markets — sign in.\n\nAddress: ${address}\nNonce: ${nonce}\nIssued At: ${stamp}`;
       signature = s.signLoginMessage(message);
       path = '/auth/btc/verify';
+    } else {
+      // Same message shape as the other address-bearing rails, which is what the server's binding check
+      // requires: our product name, the address being authenticated, and the nonce it just issued.
+      const s = this.solanaSigner();
+      address = s.address;
+      message = `Hashlock Markets wants you to sign in.\n\nAddress: ${address}\nNonce: ${nonce}\nIssued At: ${stamp}`;
+      signature = s.signLoginMessage(message);
+      path = '/auth/solana/verify';
     }
 
     const res = await this.req<{ token: string; user: User }>(path, { auth: false, body: { address, message, signature } });
+    // NEVER SILENTLY BECOME SOMEONE ELSE. A login MINTS an account when the address is unknown, so an
+    // expired HASHLOCK_TOKEN re-logged in with a key whose wallet was never linked would hand the agent
+    // a brand-new, empty account — and it would carry on trading as a stranger. Which key it was does
+    // not matter; that a 401 must not change who we are does.
+    if (this.userId && res.user?.id && res.user.id !== this.userId) {
+      throw new ApiError(
+        `re-authenticating with the ${path.split('/')[2]} key logged in as a different account (${res.user.id}, was ${this.userId}) — nothing was done with it; link that wallet to the account you meant, or drop HASHLOCK_TOKEN`,
+        401,
+      );
+    }
+    this.userId = res.user?.id ?? this.userId;
     this.token = res.token;
   }
 
@@ -520,6 +577,10 @@ export class HashlockClient {
    */
   me = async (opts: { link?: boolean } = {}) => {
     const res = await this.req<{ user: User | null }>('/me');
+    // WHO WE ARE, learned wherever it is first learned. With a static HASHLOCK_TOKEN there is no login
+    // to record it, so without this line an expired token's re-login had nothing to compare against —
+    // which is the very case where a key whose wallet was never linked mints a stranger's account.
+    this.userId ??= res.user?.id ?? null;
     // Kicked off, not awaited: whoami stays a read, and the link still lands for an agent that only ever
     // receives private orders — users.solanaAddress is what ownedAddresses puts them in the feed by.
     // Explicitly caught, not merely `void`: "never throws" is a contract this file keeps by inspection,
@@ -571,8 +632,8 @@ export class HashlockClient {
    * serves an API-key integrator, and the same ones the web app and the Mini App use — so the agent
    * signs bytes it did not assemble, and no program IDL lives in this package.
    */
-  buildLeg = (id: string, leg: 'a' | 'b', action: 'fund' | 'claim' | 'refund', body: Record<string, unknown> = {}) =>
-    this.req<SolanaLegTx>(`/swaps/${id}/legs/${leg}/${action}`, { body });
+  buildLeg = <T = SolanaLegTx>(id: string, leg: 'a' | 'b', action: 'fund' | 'claim' | 'refund', body: Record<string, unknown> = {}) =>
+    this.req<T>(`/swaps/${id}/legs/${leg}/${action}`, { body });
   broadcastSigned = (chain: 'evm' | 'tron' | 'bitcoin' | 'solana', signed: unknown) =>
     this.req<{ txid: string }>('/swaps/tx/broadcast', { body: { chain, signed } });
 }

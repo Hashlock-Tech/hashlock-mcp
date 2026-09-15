@@ -1,8 +1,8 @@
 # @hashlock-tech/mcp
 
-> **Hashlock Markets** — the settlement layer for the agent economy, as MCP tools. Non-custodial cross-chain OTC: sealed RFQ + price negotiation + **HTLC atomic settlement** — both legs settle or both refund; no bridge, no custodian, no counterparty risk. BTC ↔ EVM / TRON.
+> **Hashlock Markets** — the settlement layer for the agent economy, as MCP tools. Non-custodial cross-chain OTC: sealed RFQ + price negotiation + **HTLC atomic settlement** — both legs settle or both refund; no bridge, no custodian, no counterparty risk. BTC ↔ EVM / TRON / Solana.
 >
-> ⚠️ **Testnets only for now** (Ethereum Sepolia · TRON Nile · Bitcoin signet). Mainnet comes after the security-hardening gate — do not send real funds.
+> ⚠️ **Testnets only for now** (Ethereum Sepolia · TRON Nile · Bitcoin signet · Solana devnet). Mainnet comes after the security-hardening gate — do not send real funds.
 
 [![npm](https://img.shields.io/npm/v/@hashlock-tech/mcp.svg)](https://www.npmjs.com/package/@hashlock-tech/mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
@@ -52,18 +52,19 @@ Local stdio via `npx` (Claude Desktop / Cursor / Windsurf `mcpServers` config):
 ## Auth — autonomous, per chain
 
 The agent owns its key(s); the server does the login itself (nonce → sign → JWT, refreshed on expiry).
-The first configured key (EVM → TRON → BTC) mints the session; each key also signs settlement on its chain.
+The first configured key (EVM → TRON → BTC → Solana) mints the session; each key also signs settlement on its chain.
 
 | Env var | Chain | Login |
 |---|---|---|
 | `HASHLOCK_EVM_KEY` | EVM | SIWE `personal_sign` |
 | `HASHLOCK_TRON_KEY` | TRON | `signMessageV2` |
 | `HASHLOCK_BTC_KEY` | Bitcoin | BIP-322 |
-| `HASHLOCK_SOLANA_KEY` | Solana | — signing only, see below |
+| `HASHLOCK_SOLANA_KEY` | Solana | ed25519 `signMessage` |
 | `HASHLOCK_TOKEN` | — | a ready JWT (alternative to a key) |
 
-`HASHLOCK_SOLANA_KEY` is base58 — the 64-byte export a wallet gives you, or a bare 32-byte seed. It does
-not mint the session; set it alongside whichever key does. It IS used to prove ownership of the wallet
+`HASHLOCK_SOLANA_KEY` is base58 — the 64-byte export a wallet gives you, or a bare 32-byte seed. It mints
+the session when it is the only key set, and otherwise sits behind the others in the order above. Either
+way it proves ownership of the wallet
 (a signed, nonce-bearing message to `/me/link-solana`) the first time the agent posts, quotes, accepts or
 calls `whoami`, because an order whose give leg is Solana is refused without it — and because it is what
 puts the agent in the feed for a private order aimed at that wallet. If the account is already linked to a
@@ -142,8 +143,9 @@ Env: `HASHLOCK_V1_URL` (developer-API base, default `https://api.hashlock.market
 | `get_deal_secret` | The locally-stored swap preimage (gated on both legs funded) |
 | `reveal_claim` | Report an out-of-band claim (secret + tx) so the other leg settles |
 | `whoami` | The account you're authenticated as |
-| **`fund_leg`** | **Autonomous:** fund your side of a swap on-chain with the agent's own key (EVM/TRON/BTC) |
+| **`fund_leg`** | **Autonomous:** fund your side of a swap on-chain with the agent's own key (EVM/TRON/BTC/Solana) |
 | **`claim_leg`** | **Autonomous:** claim your receive leg with the preimage (reveals the secret on-chain) |
+| **`refund_leg`** | **Autonomous:** take your funded leg back once its timelock has passed and nobody claimed it |
 
 Amounts are **human decimal strings** ("0.5"); prices are the **total** quote-asset amount, not per-unit. Errors return a structured envelope `{ error: { code, is_retryable, recovery_hint } }` agents can branch on.
 

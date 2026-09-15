@@ -15,7 +15,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@hashlock-tech/mcp",
-      "version": "0.6.0",
+      "version": "0.7.0",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"
@@ -46,6 +46,12 @@
           "isRequired": false,
           "isSecret": true,
           "name": "HASHLOCK_BTC_KEY"
+        },
+        {
+          "description": "Solana secret key (base58, 32- or 64-byte) for autonomous login + Solana HTLC settlement",
+          "isRequired": false,
+          "isSecret": true,
+          "name": "HASHLOCK_SOLANA_KEY"
         },
         {
           "description": "A ready JWT (alternative to a key)",

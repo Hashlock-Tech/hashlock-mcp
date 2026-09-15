@@ -11,6 +11,17 @@ import * as ecc from 'tiny-secp256k1';
 bitcoin.initEccLib(ecc);
 const ECPair = ECPairFactory(ecc);
 
+/**
+ * The most a server-built spend may leave for a miner before this side refuses it, unless it is under a
+ * tenth of what is being swept — a floor, so a dust-sized escrow whose fee really is most of it still
+ * settles. Both halves have to be exceeded to refuse.
+ *
+ * The number is the API's OWN ceiling (its prepareBtcSpend clamps the fee to 100 000 sats), not a
+ * tighter guess: a lower one here would refuse a legitimate refund of a small escrow swept from many
+ * UTXOs in a busy mempool — which is exactly when an agent needs its money back.
+ */
+const MAX_MINER_FEE_SATS = 100_000n;
+
 function net(network: string): bitcoin.networks.Network {
   // Signet + testnet share the same address params in bitcoinjs-lib (tb1… bech32).
   return network === 'mainnet' ? bitcoin.networks.bitcoin : bitcoin.networks.testnet;
@@ -55,6 +66,81 @@ export class BtcSigner {
     if (!address) throw new Error('could not derive BTC address from key');
     this.address = address;
     this.pubkeyHex = Buffer.from(this.keyPair.publicKey).toString('hex');
+  }
+
+  /**
+   * Sign a spend the SERVER built — but on hashes computed HERE, from the PSBT it sent.
+   *
+   * The key that signs is the same one holding the agent's own coins, so signing 32 bytes on a server's
+   * word is authority to move them: a wrong HASHLOCK_API_URL could answer with a perfectly good HTLC
+   * PSBT and sighashes over a different transaction entirely — one spending the agent's wallet. So the
+   * PSBT is the only input that counts. Every sighash is recomputed from it (the same BIP-143 digest
+   * the API produces), and the server's own list is compared rather than trusted: a disagreement means
+   * we are not looking at the same transaction, and nothing is signed.
+   *
+   * What the transaction may be is bounded before that: it spends the HTLC this leg was funded at, and
+   * pays an address this side already knows. The witness itself is still the API's to assemble — that
+   * is script knowledge, and a second copy of it here is the copy that gets it wrong.
+   */
+  signServerSpend(p: {
+    psbtBase64: string;
+    sighashHexes: string[];
+    spends: string;
+    paysTo: string[];
+    network: string;
+  }): string[] {
+    const n = net(p.network);
+    const psbt = bitcoin.Psbt.fromBase64(p.psbtBase64, { network: n });
+    const inputs = psbt.data.inputs;
+    if (inputs.length !== p.sighashHexes.length) {
+      throw new Error(`the API sent ${p.sighashHexes.length} sighash(es) for a transaction with ${inputs.length} input(s)`);
+    }
+    if (inputs.length === 0) throw new Error('the API sent a transaction with no inputs');
+    // A transaction with no outputs pays the whole escrow to miners, and every "each output pays…"
+    // rule below would pass over an empty list.
+    if (psbt.txOutputs.length === 0) throw new Error('refusing to sign: this transaction has no outputs');
+
+    const wantIn = bitcoin.address.toOutputScript(p.spends, n);
+    const wantOut = p.paysTo.map((a) => bitcoin.address.toOutputScript(a, n));
+    psbt.txOutputs.forEach((o, i) => {
+      if (!wantOut.some((w) => o.script.equals(w))) {
+        throw new Error(
+          `refusing to sign: output ${i} pays ${p.paysTo.join(' or ')} — nowhere this key can be refunded to, so either this leg is not this agent's to refund, or the build is not the one it asked for`,
+        );
+      }
+    });
+    // AND HOW MUCH OF IT SURVIVES. Bounding the scripts alone leaves the amounts free, and what is not
+    // paid out is paid to a miner: a server that sets the single output to dust hands the escrow to
+    // whoever mines it. The inputs' own values are the server's too, but lying about them only makes
+    // the signature invalid, so they are a fair basis for the ratio.
+    const sweeping = inputs.reduce((n2, i2) => n2 + BigInt(i2.witnessUtxo?.value ?? 0), 0n);
+    const paying = psbt.txOutputs.reduce((n2, o) => n2 + BigInt(o.value), 0n);
+    const fee = sweeping - paying;
+    if (fee < 0n) throw new Error('refusing to sign: this transaction pays out more than it spends');
+    if (fee > MAX_MINER_FEE_SATS && fee * 10n > sweeping) {
+      throw new Error(`refusing to sign: ${fee} sat(s) of ${sweeping} would go to the miner, not to you`);
+    }
+
+    const tx = bitcoin.Transaction.fromBuffer(psbt.data.getTransaction());
+    return inputs.map((input, i) => {
+      const utxo = input.witnessUtxo;
+      const witnessScript = input.witnessScript;
+      if (!utxo || !witnessScript) throw new Error(`input ${i} carries no witnessUtxo/witnessScript — this transaction cannot be checked`);
+      // THE SCRIPT THAT ENTERS THE DIGEST, not the one beside it. `witnessUtxo.script` is metadata the
+      // sender chose and the signature never covers; `witnessScript` is what hashForWitnessV0 hashes.
+      // Checking only the former let a PSBT name the real HTLC there while the digest committed to the
+      // agent's OWN wallet script over its own UTXO — a valid signature, spending its coins.
+      const spendsHtlc = bitcoin.payments.p2wsh({ redeem: { output: witnessScript, network: n }, network: n }).output;
+      if (!spendsHtlc?.equals(wantIn) || !utxo.script.equals(wantIn)) {
+        throw new Error(`refusing to sign: input ${i} spends something other than ${p.spends}`);
+      }
+      const mine = tx.hashForWitnessV0(i, witnessScript, utxo.value, bitcoin.Transaction.SIGHASH_ALL);
+      const said = Buffer.from(p.sighashHexes[i]!.replace(/^0x/, ''), 'hex');
+      if (!mine.equals(said)) {
+        throw new Error(`refusing to sign: the API's sighash for input ${i} is not the one this transaction produces`);
+      }
+      return Buffer.from(this.keyPair.sign(mine)).toString('hex');
+    });
   }
 
   /** BIP-322 message signature (for /auth/btc/verify). */

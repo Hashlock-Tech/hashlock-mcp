@@ -32,6 +32,13 @@ const sharedAbi = [
     ],
     outputs: [],
   },
+  {
+    type: 'function',
+    name: 'refund',
+    stateMutability: 'nonpayable',
+    inputs: [{ name: 'swapId', type: 'bytes32' }],
+    outputs: [],
+  },
 ] as const;
 const erc20Abi = [
   {
@@ -101,6 +108,13 @@ export class TronSigner {
     return shared
       .fund(swapIdFromUuid(p.swapId), p.recipient, p.amount, hex32(p.hashlockHex), p.timelockUnix, p.fee)
       .send({ feeLimit: FEE_LIMIT });
+  }
+
+  /** Take a funded slot back after its timelock. The pool refuses before it, so the chain is the gate. */
+  async refund(chain: TronChain, onchainSwapId: string): Promise<string> {
+    const tw = this.tw(chain);
+    const shared = tw.contract(sharedAbi as unknown as never[], chain.sharedHtlc);
+    return shared.refund(hex32(onchainSwapId)).send({ feeLimit: FEE_LIMIT });
   }
 
   async claim(chain: TronChain, onchainSwapId: string, secretHex: string): Promise<string> {

@@ -48,6 +48,7 @@ const erc20Abi = [
 ] as const;
 const htlcAbi = [
   { type: 'function', name: 'claim', stateMutability: 'nonpayable', inputs: [{ name: 'secret', type: 'bytes32' }], outputs: [] },
+  { type: 'function', name: 'refund', stateMutability: 'nonpayable', inputs: [], outputs: [] },
 ] as const;
 
 export interface EvmChain {
@@ -111,6 +112,15 @@ export class EvmSigner {
       data,
       value: p.token ? 0n : p.amount + p.fee,
     });
+    await pub.waitForTransactionReceipt({ hash });
+    return hash;
+  }
+
+  /** Take the funded clone back after its timelock. The clone refuses before it, so the chain is the gate. */
+  async refund(chain: EvmChain, clone: Address): Promise<string> {
+    const { wallet, pub } = this.clients(chain);
+    const data = encodeFunctionData({ abi: htlcAbi, functionName: 'refund', args: [] });
+    const hash = await wallet.sendTransaction({ to: clone, data });
     await pub.waitForTransactionReceipt({ hash });
     return hash;
   }
