@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { BtcSigner } from '../chains/btc.js';
 import { EvmSigner } from '../chains/evm.js';
 import { TronSigner } from '../chains/tron.js';
-import { familyOf } from '../settlement.js';
+import { familyOf, fundMustWait } from '../settlement.js';
 
 describe('familyOf', () => {
   it('maps chain names to settlement families', () => {
@@ -230,4 +230,21 @@ describe('BTC: signing a server-built spend', () => {
     expect(() => ask({}, build({ outputs: 0 }))).toThrow(/no outputs/);
   });
 
+});
+
+// The agent signs its own funding, so this is the only gate that ever sees it: the short leg must wait
+// for the initiator's, or the initiator can claim it with nothing of theirs locked.
+describe('fundMustWait', () => {
+  const swap = (initiatorUserId: string, status: string) => ({ initiatorUserId, makerId: 'maker', status });
+
+  it('lets the initiator fund at once and holds the other side until then', () => {
+    expect(fundMustWait(swap('maker', 'agreed'), 'a')).toBe(false);
+    expect(fundMustWait(swap('maker', 'agreed'), 'b')).toBe(true);
+    expect(fundMustWait(swap('maker', 'initiator_funded'), 'b')).toBe(false);
+  });
+
+  it('follows the initiator, not the leg letter', () => {
+    expect(fundMustWait(swap('taker', 'agreed'), 'b')).toBe(false);
+    expect(fundMustWait(swap('taker', 'agreed'), 'a')).toBe(true);
+  });
 });

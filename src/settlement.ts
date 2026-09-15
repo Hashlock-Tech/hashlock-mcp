@@ -98,11 +98,27 @@ function feeForLeg(swap: Swap, assetId: string, meIsFeePayer: boolean): bigint {
   return meIsFeePayer && swap.feeAssetId === assetId ? BigInt(swap.feeAmount || '0') : 0n;
 }
 
+/**
+ * Whether funding `leg` must wait. The short leg is funded only once the swap is `initiator_funded`. This
+ * path signs with the agent's own key, so no server-side gate ever sees it: funding the counterparty leg
+ * while the swap is still `agreed` gives the initiator an escrow they can claim with nothing of theirs
+ * locked — and it sits in the window where its payout can still be rewritten, so the secret is never
+ * relayed back when they do.
+ */
+export function fundMustWait(swap: Pick<Swap, 'initiatorUserId' | 'makerId' | 'status'>, leg: Leg): boolean {
+  const initiators: Leg = swap.initiatorUserId === swap.makerId ? 'a' : 'b';
+  return leg !== initiators && swap.status !== 'initiator_funded';
+}
+
 /** Fund the leg the agent gives. Returns the on-chain tx id. */
 export async function fundMyLeg(api: HashlockClient, swap: Swap, assets: Asset[]): Promise<{ tx: string; leg: Leg; chain: string }> {
   const r = await role(api, swap);
-  const view = legView(swap, r === 'maker' ? 'a' : 'b');
+  const mine: Leg = r === 'maker' ? 'a' : 'b';
+  const view = legView(swap, mine);
   if (view.fundTx) throw new Error(`your ${view.chain} leg is already funded (${view.fundTx})`);
+  if (fundMustWait(swap, mine)) {
+    throw new Error(`the initiator has not funded their leg yet (swap is ${swap.status}) — wait for it before funding yours`);
+  }
   if (!view.payout) throw new Error('the counterparty has not set their receive address yet — cannot fund');
   const me = (await api.me()).user!;
   const fee = feeForLeg(swap, view.assetId, swap.feePayerId === me.id);
