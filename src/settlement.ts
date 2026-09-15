@@ -94,8 +94,15 @@ async function role(api: HashlockClient, swap: Swap): Promise<'maker' | 'taker'>
   throw new Error('you are not a party to this swap');
 }
 
-function feeForLeg(swap: Swap, assetId: string, meIsFeePayer: boolean): bigint {
-  return meIsFeePayer && swap.feeAssetId === assetId ? BigInt(swap.feeAmount || '0') : 0n;
+/**
+ * The fee a funding of this leg carries: the API's feeOwedOnLeg rule exactly — the leg whose asset is the
+ * fee asset owes it, whoever funds it (contract audit issue 6). The redeployed contracts bind the fee into
+ * the EVM escrow address and the TRON slot key, so a different rule here would not just underpay: it would
+ * fund a different escrow than the one the server looks for.
+ */
+export function feeForLeg(swap: Pick<Swap, 'feeAssetId' | 'feeAmount'>, assetId: string): bigint {
+  const owed = BigInt(swap.feeAmount || '0');
+  return owed > 0n && swap.feeAssetId === assetId ? owed : 0n;
 }
 
 /**
@@ -120,8 +127,7 @@ export async function fundMyLeg(api: HashlockClient, swap: Swap, assets: Asset[]
     throw new Error(`the initiator has not funded their leg yet (swap is ${swap.status}) — wait for it before funding yours`);
   }
   if (!view.payout) throw new Error('the counterparty has not set their receive address yet — cannot fund');
-  const me = (await api.me()).user!;
-  const fee = feeForLeg(swap, view.assetId, swap.feePayerId === me.id);
+  const fee = feeForLeg(swap, view.assetId);
   const asset = assets.find((a) => a.id === view.assetId);
   const hashlockHex = swap.hashlock.replace(/^0x/, '');
   const fam = await api.familyOf(view.chain);

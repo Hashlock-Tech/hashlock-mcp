@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { BtcSigner } from '../chains/btc.js';
 import { EvmSigner } from '../chains/evm.js';
 import { TronSigner } from '../chains/tron.js';
-import { familyOf, fundMustWait } from '../settlement.js';
+import { familyOf, fundMustWait, feeForLeg } from '../settlement.js';
 
 describe('familyOf', () => {
   it('maps chain names to settlement families', () => {
@@ -246,5 +246,14 @@ describe('fundMustWait', () => {
   it('follows the initiator, not the leg letter', () => {
     expect(fundMustWait(swap('taker', 'agreed'), 'b')).toBe(false);
     expect(fundMustWait(swap('taker', 'agreed'), 'a')).toBe(true);
+  });
+});
+
+describe('feeForLeg — the same rule as the API', () => {
+  it('charges the leg whose asset is the fee asset, whoever funds it, and no other leg', () => {
+    const swap = { feeAssetId: 'usdt', feeAmount: '300' };
+    expect(feeForLeg(swap, 'usdt')).toBe(300n);
+    expect(feeForLeg(swap, 'btc')).toBe(0n);
+    expect(feeForLeg({ feeAssetId: 'usdt', feeAmount: '' }, 'usdt')).toBe(0n);
   });
 });
