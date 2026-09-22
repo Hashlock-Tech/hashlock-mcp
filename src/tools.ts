@@ -157,17 +157,25 @@ export function registerTools(server: McpServer, api: HashlockClient, secrets: S
       'Act in a deal thread. Actions:',
       '- message: free-text chat (body required)',
       '- propose: counter with a new TOTAL price (price required)',
-      '- accept_proposal: accept the price the counterparty proposed',
-      '- accept: accept the final terms. BOTH parties must accept; when both have, the HTLC swap is created. If you are the initiator (fund the long leg), a swap secret is generated LOCALLY on this machine and only its sha256 hashlock is sent — retrieve it later with get_deal_secret.',
+      '- accept_proposal: accept the price the counterparty proposed (price required: the pendingPrice shown by deal_status or my_deals)',
+      '- accept: accept the final terms (price required: the currentPrice shown by deal_status or my_deals). BOTH parties must accept; when both have, the HTLC swap is created. If you are the initiator (fund the long leg), a swap secret is generated LOCALLY on this machine and only its sha256 hashlock is sent — retrieve it later with get_deal_secret.',
       '- reject: decline and close the deal',
+      'Accepting names the price on purpose: if it changed since you read the deal, the accept is refused — read it again and decide.',
     ].join('\n'),
     {
       thread_id: z.string().uuid(),
       action: z.enum(['message', 'propose', 'accept_proposal', 'accept', 'reject']),
       body: z.string().optional().describe('message text (action=message)'),
-      price: z.string().optional().describe('new total price (action=propose)'),
+      price: z.string().optional().describe('total price: the new one (propose) or the one you are accepting (accept_proposal, accept)'),
     },
     wrapTool(async (a) => {
+      // A human total price → base units of the RFQ's quote asset. Every price-carrying action needs it.
+      const priceBase = async (): Promise<{ base: string; rfq: Rfq }> => {
+        if (!a.price) throw new Error(`price is required for action=${a.action}`);
+        const { rfq } = await api.getThread(a.thread_id);
+        const quote = await assetById(rfq.quoteAssetId);
+        return { base: toBaseUnits(a.price, quote?.decimals ?? 0), rfq };
+      };
       switch (a.action) {
         case 'message': {
           if (!a.body) throw new Error('body is required for action=message');
@@ -175,20 +183,19 @@ export function registerTools(server: McpServer, api: HashlockClient, secrets: S
           return okContent({ ok: true, sent: a.body });
         }
         case 'propose': {
-          if (!a.price) throw new Error('price is required for action=propose');
-          const { rfq } = await api.getThread(a.thread_id);
-          const quote = await assetById(rfq.quoteAssetId);
-          const { thread } = await api.propose(a.thread_id, toBaseUnits(a.price, quote?.decimals ?? 0));
+          const { base, rfq } = await priceBase();
+          const { thread } = await api.propose(a.thread_id, base);
           return okContent(await describeThread(thread, rfq));
         }
         case 'accept_proposal': {
-          const { thread } = await api.acceptProposal(a.thread_id);
+          const { thread } = await api.acceptProposal(a.thread_id, (await priceBase()).base);
           return okContent(await describeThread(thread));
         }
         case 'accept': {
+          const { base } = await priceBase();
           // Always generate + send a hashlock: the API stores it only when WE are the initiator.
           const { hashlock } = secrets.generate(a.thread_id);
-          const res = await api.accept(a.thread_id, hashlock);
+          const res = await api.accept(a.thread_id, base, hashlock);
           const described = await describeThread(res.thread);
           return okContent(
             res.swap

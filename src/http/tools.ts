@@ -190,15 +190,22 @@ export function registerHostedTools(server: McpServer, callV1: CallV1): void {
     async ({ id, quoteAmount }) => out(await callV1(`/threads/${id}/propose`, { method: 'POST', body: { quoteAmount } })),
   );
 
-  server.tool('accept_proposal', "Accept the counterparty's pending price on a thread.", { id: z.string().uuid() }, async ({ id }) =>
-    out(await callV1(`/threads/${id}/accept-proposal`, { method: 'POST' })),
+  server.tool(
+    'accept_proposal',
+    "Accept the counterparty's pending price on a thread. Pass the pendingAmount you read from get_thread: if a newer counter replaced it, this is refused — read again and decide.",
+    { id: z.string().uuid(), quoteAmount: z.string().regex(/^\d+$/).describe('the pending price, base units') },
+    async ({ id, quoteAmount }) => out(await callV1(`/threads/${id}/accept-proposal`, { method: 'POST', body: { quoteAmount } })),
   );
 
   server.tool(
     'accept_terms',
-    'Accept the current terms. When BOTH sides accept, the HTLC swap is created. The initiator (funds the long leg) must pass hashlock = sha256(secret): generate a 32-byte secret yourself, keep it safe, and reveal it only when you claim. The server never sees your preimage.',
-    { id: z.string().uuid(), hashlock: z.string().optional().describe('32-byte hex; required from the initiator') },
-    async ({ id, hashlock }) => out(await callV1(`/threads/${id}/accept`, { method: 'POST', body: hashlock ? { hashlock } : {} })),
+    'Accept the current terms at the price you read (currentQuoteAmount from get_thread) — refused if it moved since. When BOTH sides accept, the HTLC swap is created. The initiator (funds the long leg) must pass hashlock = sha256(secret): generate a 32-byte secret yourself, keep it safe, and reveal it only when you claim. The server never sees your preimage.',
+    {
+      id: z.string().uuid(),
+      quoteAmount: z.string().regex(/^\d+$/).describe('the current price, base units'),
+      hashlock: z.string().optional().describe('32-byte hex; required from the initiator'),
+    },
+    async ({ id, quoteAmount, hashlock }) => out(await callV1(`/threads/${id}/accept`, { method: 'POST', body: { quoteAmount, hashlock } })),
   );
 
   server.tool(

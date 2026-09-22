@@ -610,11 +610,13 @@ export class HashlockClient {
   postMessage = (id: string, body: string) => this.req(`/threads/${id}/messages`, { body: { body } });
   propose = (id: string, quoteAmount: string) =>
     this.req<{ thread: Thread }>(`/threads/${id}/propose`, { body: { quoteAmount } });
-  acceptProposal = (id: string) => this.req<{ thread: Thread }>(`/threads/${id}/accept-proposal`, { body: {} });
-  accept = async (id: string, hashlock?: string) => {
+  // Both accepts name the price (base units) — the server refuses if it moved since it was read.
+  acceptProposal = (id: string, quoteAmount: string) =>
+    this.req<{ thread: Thread }>(`/threads/${id}/accept-proposal`, { body: { quoteAmount } });
+  accept = async (id: string, quoteAmount: string, hashlock?: string) => {
     await this.ensureSolanaLinked();
     return this.withSolanaReason(() =>
-      this.req<{ thread: Thread; swap?: Swap }>(`/threads/${id}/accept`, { body: hashlock ? { hashlock } : {} }),
+      this.req<{ thread: Thread; swap?: Swap }>(`/threads/${id}/accept`, { body: { quoteAmount, hashlock } }),
     );
   };
   reject = (id: string) => this.req(`/threads/${id}/reject`, { body: {} });

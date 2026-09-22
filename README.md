@@ -143,7 +143,7 @@ Env: `HASHLOCK_V1_URL` (developer-API base, default `https://api.hashlock.market
 | `create_rfq` | Post a public RFQ or private fixed-price order |
 | `cancel_rfq` | Cancel your own request |
 | `respond_to_rfq` | Respond with a price → opens a deal thread |
-| `negotiate` | `message` / `propose` / `accept_proposal` / `accept` / `reject` |
+| `negotiate` | `message` / `propose` / `accept_proposal` / `accept` / `reject` — accepting names the price you read, and is refused if it moved |
 | `my_rfqs`, `my_deals` | Your requests and deal threads |
 | `deal_status` | Thread + negotiation history + HTLC swap state |
 | `set_settlement_address` | Your receive/refund address per chain |
