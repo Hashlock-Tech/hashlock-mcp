@@ -11,6 +11,7 @@ on:
 permissions:
   contents: read
   packages: write
+  id-token: write # cosign keyless signing: the OIDC token Fulcio issues the signing certificate against
 
 env:
   IMAGE: ghcr.io/hashlock-tech/hashlock-mcp
@@ -22,13 +23,17 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
+      - uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159 # v3.9.2
+        with:
+          cosign-release: v2.5.3
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        id: build
         with:
           context: .
           push: true
@@ -38,3 +43,14 @@ jobs:
             ${{ env.IMAGE }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      # Sign what was just pushed, keyless and BY DIGEST (tags can be moved by anyone with push rights).
+      # hashlock-markets' deploy verifies this image against this workflow's identity before pulling it
+      # (VAPT #34). Fatal on purpose: with verification enforced there, an unsigned :latest would stop every
+      # deploy, so a failed signature must show up here, on the run that produced it.
+      - name: Sign image
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          : "${DIGEST:?build-push-action returned no digest}"
+          cosign sign --yes "${{ env.IMAGE }}@$DIGEST"
