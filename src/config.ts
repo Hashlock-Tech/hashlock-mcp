@@ -22,6 +22,8 @@ export interface Config {
   // Public RPC endpoints the agent submits fund/claim txs through (chain ids/contracts come from
   // GET /config; the BTC Esplora base also comes from /config). Testnet defaults.
   evmRpc: string;
+  /** Per-chain EVM RPC for any chain but ethereum: HASHLOCK_EVM_RPC_<CHAIN> (base → BASE). */
+  evmRpcFor: (chain: string) => string | undefined;
   tronHost: string;
   secretsPath: string;
 }
@@ -63,6 +65,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     btcKey,
     solanaKey,
     evmRpc: (env.HASHLOCK_EVM_RPC || 'https://ethereum-sepolia-rpc.publicnode.com').replace(/\/+$/, ''),
+    evmRpcFor: (chain) => env[`HASHLOCK_EVM_RPC_${chain.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`]?.trim().replace(/\/+$/, '') || undefined,
     tronHost: (env.HASHLOCK_TRON_HOST || 'https://nile.trongrid.io').replace(/\/+$/, ''),
     secretsPath: env.HASHLOCK_SECRETS_PATH || `${env.HOME || env.USERPROFILE || '.'}/.hashlock/mcp-secrets.json`,
   };

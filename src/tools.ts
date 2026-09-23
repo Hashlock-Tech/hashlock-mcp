@@ -253,13 +253,14 @@ export function registerTools(server: McpServer, api: HashlockClient, secrets: S
 
   server.tool(
     'set_settlement_address',
-    'Set YOUR receive/refund address for an agreed swap, per chain (each party sets the address for the chain they receive on and the one they refund to). Required before the HTLC can be funded.',
+    'Set YOUR receive/refund address for an agreed swap, per leg (each party sets the address for the leg they receive on and the one they refund from). Required before the HTLC can be funded. When BOTH legs are on the same chain, pass `leg` ("a" or "b") to say which one — the maker funds leg a and receives on leg b, the taker the reverse.',
     {
       swap_id: z.string().uuid(),
       chain: z.string().describe('Chain id from list_assets, e.g. "ethereum", "bitcoin", "tron" (see list_assets)'),
       address: z.string(),
+      leg: z.enum(['a', 'b']).optional().describe('Required when both legs are on this chain'),
     },
-    wrapTool(async ({ swap_id, chain, address }) => okContent((await api.setSwapAddress(swap_id, chain, address)).swap)),
+    wrapTool(async ({ swap_id, chain, address, leg }) => okContent((await api.setSwapAddress(swap_id, chain, address, leg)).swap)),
   );
 
   server.tool(

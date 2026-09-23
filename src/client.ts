@@ -31,6 +31,8 @@ export interface ChainConfig {
   /** The server's chain registry: name → family, as /config reports it. Older servers omit it. */
   chains?: Record<string, { family?: string }>;
   fee: { bps: number; payer: string };
+  /** Per chain (API task #57): each chain's EVM chain id and settlement contract. Older servers omit it. */
+  endpoints?: Record<string, { chainId: number | null; contract: string | null }>;
   evm: { chainId: number | null; factory: string | null; rpcUrl?: string | null };
   tron: { sharedHtlc: string | null; fullHost?: string | null };
   btc: { network: string; esplora: string | null; treasury: string | null };
@@ -255,10 +257,18 @@ export class HashlockClient {
     return familyOf(chain);
   }
 
-  async evmChain(): Promise<EvmChain> {
+  /**
+   * THE LEG'S OWN EVM CHAIN: its chain id and factory from the server's `endpoints`, and the RPC this
+   * process submits through. The `evm` block is ethereum's alone, so another chain read from it would sign
+   * for the wrong network. An older server without `endpoints` answers for ethereum only.
+   */
+  async evmChain(chain: string): Promise<EvmChain> {
     const cc = await this.chainConfig();
-    if (!cc.evm.factory || cc.evm.chainId == null) throw new Error('EVM settlement not configured on this API');
-    return { rpcUrl: this.cfg.evmRpc, chainId: cc.evm.chainId, factory: cc.evm.factory as `0x${string}` };
+    const e = cc.endpoints?.[chain] ?? (chain === 'ethereum' ? { chainId: cc.evm.chainId, contract: cc.evm.factory } : undefined);
+    if (!e?.contract || e.chainId == null) throw new Error(`EVM settlement on ${chain} is not configured on this API`);
+    const rpcUrl = chain === 'ethereum' ? this.cfg.evmRpc : this.cfg.evmRpcFor(chain);
+    if (!rpcUrl) throw new Error(`no RPC for ${chain} here: set HASHLOCK_EVM_RPC_${chain.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`);
+    return { rpcUrl, chainId: e.chainId, factory: e.contract as `0x${string}` };
   }
   async tronChain(): Promise<TronChain> {
     const cc = await this.chainConfig();
@@ -624,8 +634,9 @@ export class HashlockClient {
   myRfqs = () => this.req<{ rfqs: Rfq[] }>('/me/rfqs');
   myThreads = () => this.req<{ threads: Thread[] }>('/me/threads');
   getSwap = (id: string) => this.req<{ swap: Swap }>(`/swaps/${id}`);
-  setSwapAddress = (id: string, chain: string, address: string) =>
-    this.req<{ swap: Swap }>(`/swaps/${id}/address`, { body: { chain, address } });
+  /** `leg` names the column when both legs are on one chain (API task #57); the server requires it then. */
+  setSwapAddress = (id: string, chain: string, address: string, leg?: 'a' | 'b') =>
+    this.req<{ swap: Swap }>(`/swaps/${id}/address`, { body: { chain, address, leg } });
   reveal = (id: string, body: { secret: string; claimTx?: string; leg?: 'a' | 'b' }) =>
     this.req<{ swap: Swap }>(`/swaps/${id}/reveal`, { body });
 

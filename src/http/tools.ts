@@ -210,9 +210,9 @@ export function registerHostedTools(server: McpServer, callV1: CallV1): void {
 
   server.tool(
     'set_swap_address',
-    'Set your receive/refund address for a swap leg, per chain (Bitcoin: the compressed pubkey hex). Required before funding.',
-    { id: z.string().uuid(), chain: z.string(), address: z.string() },
-    async ({ id, chain, address }) => out(await callV1(`/swaps/${id}/address`, { method: 'POST', body: { chain, address } })),
+    'Set your receive/refund address for a swap leg (Bitcoin: the compressed pubkey hex). Required before funding. When BOTH legs are on the same chain, pass `leg` ("a" or "b") — the maker funds leg a and receives on leg b, the taker the reverse.',
+    { id: z.string().uuid(), chain: z.string(), address: z.string(), leg: z.enum(['a', 'b']).optional().describe('Required when both legs are on this chain') },
+    async ({ id, chain, address, leg }) => out(await callV1(`/swaps/${id}/address`, { method: 'POST', body: { chain, address, leg } })),
   );
 
   // ── settlement builders (return UNSIGNED tx — sign with your own wallet) ────

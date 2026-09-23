@@ -332,3 +332,31 @@ describe('familyOf on the client', () => {
     expect(await client().familyOf('solana')).toBe('svm');
   });
 });
+
+// API task #57: each EVM leg settles on its own chain. The `evm` block is ethereum's; another chain read
+// from it would sign for the wrong network.
+describe('evmChain', () => {
+  const cfg = { chains: {}, fee: { bps: 0, payer: 'taker' }, btc: { network: 'signet', esplora: null, treasury: null }, tron: { sharedHtlc: null } };
+  const make = async (env: Record<string, string>, body: unknown) => {
+    const { loadConfig } = await import('../config.js');
+    mockFetch(() => ({ json: body }));
+    return new HashlockClient(loadConfig({ HASHLOCK_API_URL: 'https://x', ...env }));
+  };
+
+  it('takes the chain id and factory of the leg\'s own chain, and that chain\'s RPC', async () => {
+    const c = await make(
+      { HASHLOCK_EVM_RPC_BASE: 'https://base.rpc/' },
+      { ...cfg, evm: { chainId: 11155111, factory: '0xeth' }, endpoints: { ethereum: { chainId: 11155111, contract: '0xeth' }, base: { chainId: 84532, contract: '0xbase' } } },
+    );
+    expect(await c.evmChain('base')).toEqual({ rpcUrl: 'https://base.rpc', chainId: 84532, factory: '0xbase' });
+    expect((await c.evmChain('ethereum')).chainId).toBe(11155111);
+  });
+
+  it('refuses a chain it has no RPC or no endpoint for, and falls back to `evm` for ethereum on an older server', async () => {
+    const c = await make({}, { ...cfg, evm: { chainId: 11155111, factory: '0xeth' }, endpoints: { base: { chainId: 84532, contract: '0xbase' } } });
+    await expect(c.evmChain('base')).rejects.toThrow(/HASHLOCK_EVM_RPC_BASE/);
+    await expect(c.evmChain('arbitrum')).rejects.toThrow(/not configured/);
+    const old = await make({}, { ...cfg, evm: { chainId: 11155111, factory: '0xeth' } });
+    expect((await old.evmChain('ethereum')).factory).toBe('0xeth');
+  });
+});

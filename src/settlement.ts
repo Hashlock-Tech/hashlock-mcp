@@ -134,7 +134,7 @@ export async function fundMyLeg(api: HashlockClient, swap: Swap, assets: Asset[]
 
   if (fam === 'evm') {
     const signer = api.evmSigner();
-    const tx = await signer.fund(await api.evmChain(), {
+    const tx = await signer.fund(await api.evmChain(view.chain), {
       swapId: swap.id,
       hashlockHex,
       recipient: view.payout as `0x${string}`,
@@ -197,7 +197,7 @@ export async function claimMyLeg(
   let tx: string;
   if (fam === 'evm') {
     if (!view.htlcAddress) throw new Error('EVM clone address unknown (leg not funded yet)');
-    tx = await api.evmSigner().claim(await api.evmChain(), view.htlcAddress as `0x${string}`, secretHex);
+    tx = await api.evmSigner().claim(await api.evmChain(view.chain), view.htlcAddress as `0x${string}`, secretHex);
   } else if (fam === 'tron') {
     if (!swap.onchainSwapId) throw new Error('TRON on-chain swapId unknown (leg not funded yet)');
     tx = await api.tronSigner().claim(await api.tronChain(), swap.onchainSwapId, secretHex);
@@ -246,7 +246,7 @@ export async function refundMyLeg(api: HashlockClient, swap: Swap): Promise<{ tx
 
   if (fam === 'evm') {
     if (!view.htlcAddress) throw new Error('EVM clone address unknown (leg not funded yet)');
-    const tx = await api.evmSigner().refund(await api.evmChain(), view.htlcAddress as `0x${string}`);
+    const tx = await api.evmSigner().refund(await api.evmChain(view.chain), view.htlcAddress as `0x${string}`);
     return { tx, leg: view.leg, chain: view.chain };
   }
   if (fam === 'tron') {
