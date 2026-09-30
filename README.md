@@ -91,9 +91,17 @@ authorization, sends you to Hashlock to sign in and approve, and receives its ow
 URL: https://dev.hashlock.markets/mcp
 ```
 
-The grant then appears under [Developers](https://dev.hashlock.markets/developers) as an ordinary API key
-and can be revoked there at any time. Clients that do not speak OAuth can still send a key they created
-themselves as `Authorization: Bearer hk_…`.
+Approving takes a signature from your wallet — a signed-in session alone grants nothing. The grant then
+appears under [Developers](https://dev.hashlock.markets/developers) as an ordinary API key: it expires after
+90 days, you are told in Telegram (when linked) whenever one is created, and it can be revoked there at any time. Clients
+that do not speak OAuth can still send a key they created themselves as `Authorization: Bearer hk_…`.
+
+**Agents, with no browser:** an agent that holds a wallet key mints its own `hk_` key — `GET
+https://dev.hashlock.markets/api/v1/keys/nonce`, sign `Hashlock Markets — create an API key.` plus
+`Address:` and `Nonce:` lines (optionally `Key name:` and `Scopes:`), and `POST /api/v1/keys` with `{ rail,
+address, message, signature }`. The key belongs to the account that wallet signs in to, created on first
+use. A wallet-only account holds one key — signing again replaces it, which is also how a lost key is
+recovered; sign up at /developers with email, Google or Telegram to hold up to 10. See `/api/v1/docs`.
 
 <details><summary>How the OAuth flow works</summary>
 
@@ -104,7 +112,7 @@ Standard OAuth 2.1, so any compliant MCP client drives it unattended:
 | Unauthorized call names its metadata | `401` + `WWW-Authenticate: … resource_metadata=…` (RFC 9728) |
 | Client reads the resource + server metadata | `/.well-known/oauth-protected-resource`, `/.well-known/oauth-authorization-server` (RFC 8414) |
 | Client registers itself | `POST /oauth/register` (RFC 7591) |
-| You sign in and approve, in the browser | `/oauth/authorize` |
+| You sign in and approve with a wallet signature, in the browser | `/oauth/authorize` |
 | Client redeems the code for a key | `POST /oauth/token` — PKCE `S256` required (RFC 7636) |
 
 Codes are single-use and expire in 60 seconds; redirect URIs are allowlisted, with loopback permitted per

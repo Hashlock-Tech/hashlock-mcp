@@ -210,7 +210,7 @@ export function registerHostedTools(server: McpServer, callV1: CallV1): void {
 
   server.tool(
     'set_swap_address',
-    'Set your receive/refund address for a swap leg (Bitcoin: the compressed pubkey hex). Required before funding. When BOTH legs are on the same chain, pass `leg` ("a" or "b") — the maker funds leg a and receives on leg b, the taker the reverse.',
+    'Set your receive/refund address for a swap leg (Bitcoin: the compressed pubkey hex). Required before funding. An address that receives money must be one this account signed in with, or proved from a signed-in web session — a prove_wallet proof made with the API key does not count. When BOTH legs are on the same chain, pass `leg` ("a" or "b") — the maker funds leg a and receives on leg b, the taker the reverse.',
     { id: z.string().uuid(), chain: z.string(), address: z.string(), leg: z.enum(['a', 'b']).optional().describe('Required when both legs are on this chain') },
     async ({ id, chain, address, leg }) => out(await callV1(`/swaps/${id}/address`, { method: 'POST', body: { chain, address, leg } })),
   );
