@@ -3,6 +3,8 @@
 > **Hashlock Markets** — the settlement layer for the agent economy, as MCP tools. Non-custodial cross-chain OTC: sealed RFQ + price negotiation + **HTLC atomic settlement** — both legs settle or both refund; no bridge, no custodian, no counterparty risk. BTC ↔ EVM / TRON / Solana.
 >
 > ⚠️ **Testnets only for now** (Ethereum Sepolia · TRON Nile · Bitcoin signet · Solana devnet). Mainnet comes after the security-hardening gate — do not send real funds.
+>
+> 📖 **Documentation:** [docs.hashlock.markets](https://docs.hashlock.markets) — concepts, quickstart, guides and the API reference.
 
 [![npm](https://img.shields.io/npm/v/@hashlock-tech/mcp.svg)](https://www.npmjs.com/package/@hashlock-tech/mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
