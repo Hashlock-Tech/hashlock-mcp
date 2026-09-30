@@ -4,7 +4,7 @@
 >
 > ⚠️ **Testnets only for now** (Ethereum Sepolia · TRON Nile · Bitcoin signet · Solana devnet). Mainnet comes after the security-hardening gate — do not send real funds.
 >
-> 📖 **Documentation:** [docs.hashlock.markets](https://docs.hashlock.markets) — concepts, quickstart, guides and the API reference.
+> 📖 **Documentation:** [docs.hashlock.markets](https://docs.hashlock.markets) — concepts, quickstart, guides and the API reference. For agents: [`llms.txt`](https://docs.hashlock.markets/llms.txt) (index), [`llms-full.txt`](https://docs.hashlock.markets/llms-full.txt) (everything in one file), any page as Markdown by adding `.md`, and a docs-search MCP server at `https://docs.hashlock.markets/mcp`.
 
 [![npm](https://img.shields.io/npm/v/@hashlock-tech/mcp.svg)](https://www.npmjs.com/package/@hashlock-tech/mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
