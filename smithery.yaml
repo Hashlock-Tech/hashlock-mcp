@@ -32,8 +32,8 @@ config:
     HASHLOCK_API_URL:
       type: "string"
       title: "REST API endpoint"
-      description: "Override the Hashlock Markets REST API endpoint."
-      default: "https://dev.hashlock.markets/api"
+      description: "Hashlock Markets REST API base (required), e.g. https://hashlock.markets/api (opens at launch)."
+  required: ["HASHLOCK_API_URL"]
 
 metadata:
   name: "Hashlock Markets"

@@ -25,7 +25,7 @@ Settlement **signing** (funding and claiming the HTLCs) stays with your own wall
 
 - **Local (stdio)** — the npm package below. You run it on your machine with **your own keys**; it can
   settle **autonomously** (SIWE login + on-chain signing with `HASHLOCK_*_KEY`). Full trust in yourself.
-- **Remote (hosted, Streamable HTTP)** — a public URL (`https://dev.hashlock.markets/mcp`) anyone can add
+- **Remote (hosted, Streamable HTTP)** — a public URL (`https://hashlock.markets/mcp`, opens at launch) anyone can add
   from Claude / ChatGPT / any MCP client; one-click OAuth, no install. Multi-tenant, so it is strictly
   **non-custodial**: settlement returns **unsigned** transactions you sign with your own wallet, and the
   server never holds keys or your swap preimage. See [Remote (hosted)](#remote-hosted) below.
@@ -41,6 +41,7 @@ Local stdio via `npx` (Claude Desktop / Cursor / Windsurf `mcpServers` config):
       "command": "npx",
       "args": ["-y", "@hashlock-tech/mcp"],
       "env": {
+        "HASHLOCK_API_URL": "https://hashlock.markets/api",
         "HASHLOCK_EVM_KEY": "0x<agent EVM key (TESTNET!)>",
         "HASHLOCK_TRON_KEY": "<agent TRON key, 64-hex (optional)>",
         "HASHLOCK_BTC_KEY": "<agent BTC WIF, signet (optional)>",
@@ -77,7 +78,7 @@ server composes each one and the agent signs the bytes it is handed. Set the age
 
 With none set, read-only tools (`list_assets`, `list_open_rfqs`, `get_rfq`) still work. Use dedicated **testnet** keys.
 
-Other env: `HASHLOCK_API_URL` (default `https://dev.hashlock.markets/api`), `HASHLOCK_APP_URL` (share links; default derived), `HASHLOCK_EVM_RPC` (default a public Sepolia RPC; another EVM chain takes `HASHLOCK_EVM_RPC_<CHAIN>`, e.g. `HASHLOCK_EVM_RPC_BASE`), `HASHLOCK_TRON_HOST` (default Nile), `HASHLOCK_SECRETS_PATH` (default `~/.hashlock/mcp-secrets.json`, mode 0600).
+Required: `HASHLOCK_API_URL` — the API base, e.g. `https://hashlock.markets/api` (opens at launch); there is no default. Other env: `HASHLOCK_APP_URL` (share links; default derived), `HASHLOCK_EVM_RPC` (default a public Sepolia RPC; another EVM chain takes `HASHLOCK_EVM_RPC_<CHAIN>`, e.g. `HASHLOCK_EVM_RPC_BASE`), `HASHLOCK_TRON_HOST` (default Nile), `HASHLOCK_SECRETS_PATH` (default `~/.hashlock/mcp-secrets.json`, mode 0600).
 
 ## Remote (hosted)
 
@@ -90,16 +91,16 @@ and no server-side secret storage here — you supply your own `hashlock` and ke
 authorization, sends you to Hashlock to sign in and approve, and receives its own key:
 
 ```
-URL: https://dev.hashlock.markets/mcp
+URL: https://hashlock.markets/mcp
 ```
 
 Approving takes a signature from your wallet — a signed-in session alone grants nothing. The grant then
-appears under [Developers](https://dev.hashlock.markets/developers) as an ordinary API key: it expires after
+appears under [Developers](https://hashlock.markets/developers) as an ordinary API key: it expires after
 90 days, you are told in Telegram (when linked) whenever one is created, and it can be revoked there at any time. Clients
 that do not speak OAuth can still send a key they created themselves as `Authorization: Bearer hk_…`.
 
 **Agents, with no browser:** an agent that holds a wallet key mints its own `hk_` key — `GET
-https://dev.hashlock.markets/api/v1/keys/nonce`, sign `Hashlock Markets — create an API key.` plus
+https://hashlock.markets/api/v1/keys/nonce`, sign `Hashlock Markets — create an API key.` plus
 `Address:` and `Nonce:` lines (optionally `Key name:` and `Scopes:`), and `POST /api/v1/keys` with `{ rail,
 address, message, signature }`. The key belongs to the account that wallet signs in to, created on first
 use. A wallet-only account holds one key — signing again replaces it, which is also how a lost key is
@@ -135,9 +136,9 @@ session can set, and `remove_wallet_proof` takes it back.
 
 ```bash
 docker build -t hashlock-mcp-http .
-docker run -p 8080:8080 -e HASHLOCK_V1_URL=https://api-dev.hashlock.markets/v1 hashlock-mcp-http
+docker run -p 8080:8080 -e HASHLOCK_V1_URL=https://api.hashlock.markets/v1 hashlock-mcp-http
 # or, from source:
-pnpm build && HASHLOCK_V1_URL=https://api-dev.hashlock.markets/v1 PORT=8080 pnpm start:http
+pnpm build && HASHLOCK_V1_URL=https://api.hashlock.markets/v1 PORT=8080 pnpm start:http
 ```
 
 Env: `HASHLOCK_V1_URL` (developer-API base, default `https://api.hashlock.markets/v1`) · `PORT` (default

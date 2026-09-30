@@ -60,8 +60,8 @@
           "name": "HASHLOCK_TOKEN"
         },
         {
-          "description": "REST API endpoint override",
-          "default": "https://dev.hashlock.markets/api",
+          "description": "Hashlock Markets REST API base (required), e.g. https://hashlock.markets/api (opens at launch)",
+          "isRequired": true,
           "name": "HASHLOCK_API_URL"
         },
         {

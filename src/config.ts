@@ -29,7 +29,13 @@ export interface Config {
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  const apiUrl = (env.HASHLOCK_API_URL || 'https://dev.hashlock.markets/api').replace(/\/+$/, '');
+  // No default, on purpose: the team's dev stand is not a public endpoint, and the production host
+  // opens at launch — a default would point an install at one or the other without being asked, and a
+  // testnet agent key at mainnet. Name the deployment you mean.
+  if (!env.HASHLOCK_API_URL?.trim()) {
+    throw new Error('HASHLOCK_API_URL is required — the Hashlock Markets API base, e.g. https://hashlock.markets/api (opens at launch)');
+  }
+  const apiUrl = env.HASHLOCK_API_URL.trim().replace(/\/+$/, '');
   // The user-facing app base (for shareable order/deal links). Default: the API host with /api → /app.
   const appUrl = (env.HASHLOCK_APP_URL || apiUrl.replace(/\/api$/, '/app')).replace(/\/+$/, '');
 
