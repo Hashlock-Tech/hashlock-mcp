@@ -55,6 +55,14 @@ export function registerHostedTools(server: McpServer, callV1: CallV1): void {
   server.tool('get_rfq', 'Details of one RFQ by id.', { id: z.string().uuid() }, async ({ id }) => out(await callV1(`/rfqs/${id}`)));
 
   server.tool(
+    'list_rfq_threads',
+    "The negotiation threads on an RFQ, newest activity first — every maker's quote on your own RFQ, or your own " +
+      'thread on someone else\'s. This is how a taker finds the quotes it received; open one with get_thread.',
+    { id: z.string().uuid() },
+    async ({ id }) => out(await callV1(`/rfqs/${id}/threads`)),
+  );
+
+  server.tool(
     'list_swaps',
     'Your swaps (agreed deals) and their HTLC settlement state. Cursor-paginated.',
     { limit: z.number().int().min(1).max(100).optional(), cursor: z.string().optional() },
