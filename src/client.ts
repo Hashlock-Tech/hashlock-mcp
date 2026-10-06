@@ -34,7 +34,7 @@ export interface ChainConfig {
   /** Per chain (API task #57): each chain's EVM chain id and settlement contract. Older servers omit it. */
   endpoints?: Record<string, { chainId: number | null; contract: string | null }>;
   evm: { chainId: number | null; factory: string | null; rpcUrl?: string | null };
-  tron: { sharedHtlc: string | null; fullHost?: string | null };
+  tron: { sharedHtlc: string | null; pool?: string | null; fullHost?: string | null };
   btc: { network: string; esplora: string | null; treasury: string | null };
 }
 
@@ -113,6 +113,9 @@ export interface Swap {
   hashlock: string;
   secretCiphertext: string | null;
   onchainSwapId: string | null;
+  /** The pool's key per TRON leg — the shared column holds whichever TRON leg was funded last. */
+  aOnchainSwapId?: string | null;
+  bOnchainSwapId?: string | null;
   feePayerId: string | null;
   feeAssetId: string | null;
   feeAmount: string;
@@ -272,8 +275,11 @@ export class HashlockClient {
   }
   async tronChain(): Promise<TronChain> {
     const cc = await this.chainConfig();
-    if (!cc.tron.sharedHtlc) throw new Error('TRON settlement not configured on this API');
-    return { fullHost: this.cfg.tronHost, sharedHtlc: cc.tron.sharedHtlc };
+    // Funding needs `sharedHtlc`, which the server hides while its pool is v1; claim, refund and login do
+    // not — they use the leg's own pool (or `pool`) and the host — so only fund refuses without it.
+    const pool = cc.tron.pool ?? cc.tron.sharedHtlc;
+    if (!pool) throw new Error('TRON settlement not configured on this API');
+    return { fullHost: this.cfg.tronHost, sharedHtlc: cc.tron.sharedHtlc, pool };
   }
   async btcChain(): Promise<BtcChain> {
     const cc = await this.chainConfig();

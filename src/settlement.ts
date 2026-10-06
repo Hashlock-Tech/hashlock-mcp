@@ -149,14 +149,15 @@ export async function fundMyLeg(api: HashlockClient, swap: Swap, assets: Asset[]
     return { tx, leg: view.leg, chain: view.chain };
   }
   if (fam === 'tron') {
-    if (!asset?.address) throw new Error('TRON leg asset has no token address');
+    // Native TRX only when the registry says so — a token row missing its address must not be funded as TRX.
+    if (!asset || (!asset.isNative && !asset.address)) throw new Error('TRON leg asset unknown');
     const tx = await api.tronSigner().fund(await api.tronChain(), {
       swapId: swap.id,
       recipient: view.payout,
       amount: view.amount,
       hashlockHex,
       timelockUnix: view.timelockUnix,
-      token: asset.address,
+      token: asset.isNative ? null : asset.address!, // null = native TRX
       fee: fee.toString(),
     });
     return { tx, leg: view.leg, chain: view.chain };
@@ -199,8 +200,7 @@ export async function claimMyLeg(
     if (!view.htlcAddress) throw new Error('EVM clone address unknown (leg not funded yet)');
     tx = await api.evmSigner().claim(await api.evmChain(view.chain), view.htlcAddress as `0x${string}`, secretHex);
   } else if (fam === 'tron') {
-    if (!swap.onchainSwapId) throw new Error('TRON on-chain swapId unknown (leg not funded yet)');
-    tx = await api.tronSigner().claim(await api.tronChain(), swap.onchainSwapId, secretHex);
+    tx = await api.tronSigner().claim(await api.tronChain(), tronLegKey(swap, view.leg), secretHex, view.htlcAddress ?? undefined);
   } else if (fam === 'svm') {
     tx = await settleSolanaLeg(api, swap.id, view.leg, 'claim', { secret: secretHex }, view.htlcAddress);
   } else {
@@ -250,8 +250,7 @@ export async function refundMyLeg(api: HashlockClient, swap: Swap): Promise<{ tx
     return { tx, leg: view.leg, chain: view.chain };
   }
   if (fam === 'tron') {
-    if (!swap.onchainSwapId) throw new Error('TRON on-chain swapId unknown (leg not funded yet)');
-    const tx = await api.tronSigner().refund(await api.tronChain(), swap.onchainSwapId);
+    const tx = await api.tronSigner().refund(await api.tronChain(), tronLegKey(swap, view.leg), view.htlcAddress ?? undefined);
     return { tx, leg: view.leg, chain: view.chain };
   }
   if (fam === 'svm') {
@@ -277,4 +276,16 @@ export async function refundMyLeg(api: HashlockClient, swap: Swap): Promise<{ tx
   // NO preimageHex: its absence is what selects the refund branch in the server's finalizer.
   const { txid } = await api.broadcastSigned('bitcoin', { psbtBase64: built.psbtBase64, signaturesHex });
   return { tx: txid, leg: view.leg, chain: view.chain };
+}
+
+/**
+ * The pool's key for THIS leg's escrow: the per-leg column the server records at funding. The shared
+ * column holds whichever TRON leg was funded last, so it is used only when the swap has one TRON leg
+ * (a TRX↔USDT swap on TRON has two). Mirrors the API's legOnchainId.
+ */
+export function tronLegKey(swap: Swap, leg: 'a' | 'b'): string {
+  const own = leg === 'a' ? swap.aOnchainSwapId : swap.bOnchainSwapId;
+  if (own) return own;
+  if (swap.aChain !== swap.bChain && swap.onchainSwapId) return swap.onchainSwapId;
+  throw new Error('TRON on-chain swapId unknown (leg not funded yet)');
 }
