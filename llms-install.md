@@ -19,6 +19,7 @@ Add this to your MCP client configuration:
       "command": "npx",
       "args": ["-y", "@hashlock-tech/mcp"],
       "env": {
+        "HASHLOCK_API_URL": "https://hashlock.markets/api",
         "HASHLOCK_EVM_KEY": "0x<dedicated agent private key>"
       }
     }

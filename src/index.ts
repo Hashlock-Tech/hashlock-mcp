@@ -1,4 +1,5 @@
 // (the shebang is injected by tsup's banner — see tsup.config.ts)
+import { createRequire } from 'node:module';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { HashlockClient } from './client.js';
@@ -19,7 +20,8 @@ const cfg = loadConfig();
 const api = new HashlockClient(cfg);
 const secrets = new SecretStore(cfg.secretsPath);
 
-const server = new McpServer({ name: 'hashlock', version: '1.0.0-rc.2' });
+const { version } = createRequire(import.meta.url)('../package.json') as { version: string }; // ships in the npm tarball
+const server = new McpServer({ name: 'hashlock', version });
 registerTools(server, api, secrets);
 
 const transport = new StdioServerTransport();
