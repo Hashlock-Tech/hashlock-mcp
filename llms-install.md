@@ -2,9 +2,9 @@
 
 ## What is this?
 
-The MCP server for **Hashlock Markets** — non-custodial cross-chain OTC trading with HTLC atomic settlement (both legs settle or both refund). You can browse the RFQ board, post requests, negotiate prices and track settlement across Bitcoin, Ethereum and TRON.
+The MCP server for **Hashlock Markets** — non-custodial cross-chain OTC trading with HTLC atomic settlement (both legs settle or both refund). You can browse the RFQ board, post requests, negotiate prices and track settlement across Bitcoin, Ethereum, Base, Robinhood Chain, TRON and Solana.
 
-> ⚠️ **Testnets only** (Ethereum Sepolia · TRON Nile · Bitcoin signet). Do not use real funds or mainnet keys.
+> Use a dedicated key with only the funds you intend to trade.
 
 ## Quick Install
 
@@ -19,7 +19,7 @@ Add this to your MCP client configuration:
       "command": "npx",
       "args": ["-y", "@hashlock-tech/mcp"],
       "env": {
-        "HASHLOCK_EVM_KEY": "0x<dedicated testnet private key>"
+        "HASHLOCK_EVM_KEY": "0x<dedicated agent private key>"
       }
     }
   }

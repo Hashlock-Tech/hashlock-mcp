@@ -8,7 +8,6 @@ import { createHttpApp } from './server.js';
  *   HASHLOCK_V1_URL  developer API base (default https://api.hashlock.markets/v1)
  *   MCP_PUBLIC_URL   public origin of this deployment, for the OAuth metadata pointer
  *   PORT             listen port (default 8080)
- * Testnets only until the hardening gate.
  */
 const version = (() => {
   try {

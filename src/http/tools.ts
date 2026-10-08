@@ -35,7 +35,7 @@ export function registerHostedTools(server: McpServer, callV1: CallV1): void {
     out(await callV1('/me')),
   );
 
-  server.tool('list_assets', 'Tradeable asset registry: {id, chain, symbol, address|null (native), decimals}. Testnets only for now (Sepolia, TRON Nile, BTC signet, Solana devnet).', {}, async () =>
+  server.tool('list_assets', 'Tradeable asset registry: {id, chain, symbol, address|null (native), decimals}.', {}, async () =>
     out(await callV1('/assets')),
   );
 

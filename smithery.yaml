@@ -13,17 +13,17 @@ config:
   properties:
     HASHLOCK_EVM_KEY:
       type: "string"
-      title: "Agent EVM private key (testnet)"
+      title: "Agent EVM private key"
       description: >-
         0x private key for autonomous SIWE login — the server signs the login
-        itself and re-authenticates on expiry. Use a dedicated TESTNET key.
+        itself and re-authenticates on expiry. Use a dedicated key with only the funds you intend to trade.
     HASHLOCK_TRON_KEY:
       type: "string"
-      title: "Agent TRON private key (testnet)"
+      title: "Agent TRON private key"
       description: "64-hex TRON key for autonomous signMessageV2 login + TRON settlement."
     HASHLOCK_BTC_KEY:
       type: "string"
-      title: "Agent BTC WIF (signet)"
+      title: "Agent BTC WIF"
       description: "Bitcoin WIF for autonomous BIP-322 login + BTC HTLC claims."
     HASHLOCK_TOKEN:
       type: "string"
@@ -32,7 +32,7 @@ config:
     HASHLOCK_API_URL:
       type: "string"
       title: "REST API endpoint"
-      description: "Hashlock Markets REST API base (required), e.g. https://hashlock.markets/api (opens at launch)."
+      description: "Hashlock Markets REST API base (required), e.g. https://hashlock.markets/api."
   required: ["HASHLOCK_API_URL"]
 
 metadata:
@@ -41,7 +41,7 @@ metadata:
     The settlement layer for the agent economy. Non-custodial cross-chain OTC:
     sealed RFQ + price negotiation + HTLC atomic settlement — both legs settle
     or both refund; no bridge, no custodian, no counterparty risk. BTC ↔ EVM /
-    TRON. TESTNETS ONLY for now (Ethereum Sepolia, TRON Nile, Bitcoin signet).
+    TRON. Live on mainnet.
     Autonomous-agent ready: EVM/TRON/BTC login with the agent's own keys +
     on-chain fund/claim; swap secrets generated locally. 16 tools: list_assets, list_open_rfqs, get_rfq,
     create_rfq, cancel_rfq, respond_to_rfq, negotiate, my_rfqs, my_deals,
@@ -66,4 +66,3 @@ metadata:
     - "bitcoin"
     - "ethereum"
     - "tron"
-    - "testnet"

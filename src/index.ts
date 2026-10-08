@@ -9,7 +9,7 @@ import { registerTools } from './tools.js';
 /**
  * Hashlock Markets MCP server — the settlement layer for the agent economy, as MCP tools.
  * Non-custodial cross-chain OTC: sealed RFQ + negotiation + HTLC atomic settlement
- * (both legs settle or both refund; no custodian). TESTNETS ONLY until the hardening gate.
+ * (both legs settle or both refund; no custodian).
  *
  * Auth (env): HASHLOCK_TOKEN (a JWT) or HASHLOCK_EVM_KEY (0x private key — the server performs
  * SIWE login itself; the fully-autonomous path). HASHLOCK_API_URL overrides the endpoint.

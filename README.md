@@ -2,7 +2,7 @@
 
 > **Hashlock Markets** — the settlement layer for the agent economy, as MCP tools. Non-custodial cross-chain OTC: sealed RFQ + price negotiation + **HTLC atomic settlement** — both legs settle or both refund; no bridge, no custodian, no counterparty risk. BTC ↔ EVM / TRON / Solana.
 >
-> ⚠️ **Testnets only for now** (Ethereum Sepolia · TRON Nile · Bitcoin signet · Solana devnet). Mainnet comes after the security-hardening gate — do not send real funds.
+> Live on mainnet: Bitcoin, Ethereum, Base, Robinhood Chain, TRON, Solana. Use a dedicated key with only the funds you intend to trade.
 >
 > 📖 **Documentation:** [docs.hashlock.markets](https://docs.hashlock.markets) — concepts, quickstart, guides and the API reference. For agents: [`llms.txt`](https://docs.hashlock.markets/llms.txt) (index), [`llms-full.txt`](https://docs.hashlock.markets/llms-full.txt) (everything in one file), any page as Markdown by adding `.md`, and a docs-search MCP server at `https://docs.hashlock.markets/mcp`.
 
@@ -25,7 +25,7 @@ Settlement **signing** (funding and claiming the HTLCs) stays with your own wall
 
 - **Local (stdio)** — the npm package below. You run it on your machine with **your own keys**; it can
   settle **autonomously** (SIWE login + on-chain signing with `HASHLOCK_*_KEY`). Full trust in yourself.
-- **Remote (hosted, Streamable HTTP)** — a public URL (`https://hashlock.markets/mcp`, opens at launch) anyone can add
+- **Remote (hosted, Streamable HTTP)** — a public URL (`https://hashlock.markets/mcp`) anyone can add
   from Claude / ChatGPT / any MCP client; one-click OAuth, no install. Multi-tenant, so it is strictly
   **non-custodial**: settlement returns **unsigned** transactions you sign with your own wallet, and the
   server never holds keys or your swap preimage. See [Remote (hosted)](#remote-hosted) below.
@@ -42,10 +42,10 @@ Local stdio via `npx` (Claude Desktop / Cursor / Windsurf `mcpServers` config):
       "args": ["-y", "@hashlock-tech/mcp"],
       "env": {
         "HASHLOCK_API_URL": "https://hashlock.markets/api",
-        "HASHLOCK_EVM_KEY": "0x<agent EVM key (TESTNET!)>",
+        "HASHLOCK_EVM_KEY": "0x<agent EVM key>",
         "HASHLOCK_TRON_KEY": "<agent TRON key, 64-hex (optional)>",
-        "HASHLOCK_BTC_KEY": "<agent BTC WIF, signet (optional)>",
-        "HASHLOCK_SOLANA_KEY": "<agent Solana key, base58, devnet (optional)>"
+        "HASHLOCK_BTC_KEY": "<agent BTC WIF (optional)>",
+        "HASHLOCK_SOLANA_KEY": "<agent Solana key, base58 (optional)>"
       }
     }
   }
@@ -76,9 +76,9 @@ transactions this package does not build: the escrow's ADDRESS is a hash of the 
 server composes each one and the agent signs the bytes it is handed. Set the agent's Solana address — `whoami` returns it as
 `localSigners.addresses.solana` — as its settlement address with `set_settlement_address` before funding.
 
-With none set, read-only tools (`list_assets`, `list_open_rfqs`, `get_rfq`) still work. Use dedicated **testnet** keys.
+With none set, read-only tools (`list_assets`, `list_open_rfqs`, `get_rfq`) still work. Use a dedicated key with only the funds you intend to trade.
 
-Required: `HASHLOCK_API_URL` — the API base, e.g. `https://hashlock.markets/api` (opens at launch); there is no default. Other env: `HASHLOCK_APP_URL` (share links; default derived), `HASHLOCK_EVM_RPC` (default a public Sepolia RPC; another EVM chain takes `HASHLOCK_EVM_RPC_<CHAIN>`, e.g. `HASHLOCK_EVM_RPC_BASE`), `HASHLOCK_TRON_HOST` (default Nile), `HASHLOCK_SECRETS_PATH` (default `~/.hashlock/mcp-secrets.json`, mode 0600).
+Required: `HASHLOCK_API_URL` — the API base, e.g. `https://hashlock.markets/api`; there is no default. Other env: `HASHLOCK_APP_URL` (share links; default derived), `HASHLOCK_EVM_RPC` (default a public Ethereum mainnet RPC; another EVM chain takes `HASHLOCK_EVM_RPC_<CHAIN>`, e.g. `HASHLOCK_EVM_RPC_BASE`), `HASHLOCK_TRON_HOST` (default TronGrid mainnet), `HASHLOCK_TRON_API_KEY` (a TronGrid API key — TronGrid throttles requests without one), `HASHLOCK_SECRETS_PATH` (default `~/.hashlock/mcp-secrets.json`, mode 0600).
 
 ## Remote (hosted)
 
@@ -130,8 +130,6 @@ call `wallet_proof_message` for the exact text, sign it with that wallet (EVM `p
 what you can trade and nothing else: it never becomes the account's payout address, which only a wallet
 session can set, and `remove_wallet_proof` takes it back.
 
-> **Testnets only** until the hardening gate.
-
 **Run the hosted service yourself:**
 
 ```bash
@@ -172,7 +170,7 @@ Amounts are **human decimal strings** ("0.5"); prices are the **total** quote-as
 With a key set for each chain a swap touches, an agent can run end to end with no human:
 `create_rfq`/`respond_to_rfq` → `negotiate` (accept) → `set_settlement_address` (both chains) →
 `fund_leg` → `claim_leg`. Funding/claiming is signed locally with the agent's keys; the swap secret is
-generated + stored locally and only its hashlock leaves the machine. Use dedicated testnet keys.
+generated + stored locally and only its hashlock leaves the machine. Use a dedicated key with only the funds you intend to trade.
 
 ## How atomic settlement works
 

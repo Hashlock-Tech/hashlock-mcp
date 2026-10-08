@@ -56,7 +56,7 @@ export function registerTools(server: McpServer, api: HashlockClient, secrets: S
   // ── read-only (no auth needed) ──────────────────────────────────────────────
   server.tool(
     'list_assets',
-    'Asset registry: every tradeable asset with its chain, symbol and decimals. Reference assets in other tools as "SYMBOL@chain" (e.g. "USDT@ethereum", "BTC@bitcoin"). TESTNETS ONLY for now (Sepolia, TRON Nile, BTC signet).',
+    'Asset registry: every tradeable asset with its chain, symbol and decimals. Reference assets in other tools as "SYMBOL@chain" (e.g. "USDT@ethereum", "BTC@bitcoin").',
     {},
     wrapTool(async () => {
       const assets = await api.assets();

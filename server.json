@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.Hashlock-Tech/hashlock",
-  "description": "Non-custodial cross-chain OTC for AI agents: sealed RFQ, negotiation, HTLC atomic swaps. Testnet.",
+  "description": "Non-custodial cross-chain OTC for AI agents: sealed RFQ, negotiation, HTLC atomic swaps.",
   "title": "Hashlock Markets",
   "repository": {
     "url": "https://github.com/Hashlock-Tech/hashlock-mcp",
@@ -30,7 +30,7 @@
       ],
       "environmentVariables": [
         {
-          "description": "EVM private key (0x, 32-byte) for autonomous SIWE login + EVM settlement — dedicated TESTNET key",
+          "description": "EVM private key (0x, 32-byte) for autonomous SIWE login + EVM settlement — use a dedicated key",
           "isRequired": false,
           "isSecret": true,
           "name": "HASHLOCK_EVM_KEY"
@@ -42,7 +42,7 @@
           "name": "HASHLOCK_TRON_KEY"
         },
         {
-          "description": "Bitcoin WIF (signet) for autonomous BIP-322 login + BTC HTLC claims",
+          "description": "Bitcoin WIF for autonomous BIP-322 login + BTC HTLC claims",
           "isRequired": false,
           "isSecret": true,
           "name": "HASHLOCK_BTC_KEY"
@@ -60,19 +60,24 @@
           "name": "HASHLOCK_TOKEN"
         },
         {
-          "description": "Hashlock Markets REST API base (required), e.g. https://hashlock.markets/api (opens at launch)",
+          "description": "Hashlock Markets REST API base (required), e.g. https://hashlock.markets/api",
           "isRequired": true,
           "name": "HASHLOCK_API_URL"
         },
         {
           "description": "EVM RPC the agent submits fund/claim through",
-          "default": "https://ethereum-sepolia-rpc.publicnode.com",
+          "default": "https://ethereum-rpc.publicnode.com",
           "name": "HASHLOCK_EVM_RPC"
         },
         {
           "description": "TRON full host",
-          "default": "https://nile.trongrid.io",
+          "default": "https://api.trongrid.io",
           "name": "HASHLOCK_TRON_HOST"
+        },
+        {
+          "description": "TronGrid API key (TronGrid throttles requests without one)",
+          "isSecret": true,
+          "name": "HASHLOCK_TRON_API_KEY"
         }
       ]
     }

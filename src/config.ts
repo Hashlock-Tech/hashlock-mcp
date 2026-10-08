@@ -20,20 +20,21 @@ export interface Config {
   btcKey?: string; // WIF
   solanaKey?: string; // base58, 32- or 64-byte
   // Public RPC endpoints the agent submits fund/claim txs through (chain ids/contracts come from
-  // GET /config; the BTC Esplora base also comes from /config). Testnet defaults.
+  // GET /config; the BTC Esplora base also comes from /config). Mainnet defaults.
   evmRpc: string;
   /** Per-chain EVM RPC for any chain but ethereum: HASHLOCK_EVM_RPC_<CHAIN> (base → BASE). */
   evmRpcFor: (chain: string) => string | undefined;
   tronHost: string;
+  /** TronGrid API key (TRON-PRO-API-KEY): TronGrid throttles requests without one. */
+  tronApiKey?: string;
   secretsPath: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
-  // No default, on purpose: the team's dev stand is not a public endpoint, and the production host
-  // opens at launch — a default would point an install at one or the other without being asked, and a
-  // testnet agent key at mainnet. Name the deployment you mean.
+  // No default, on purpose: a default would point an install at a deployment without being asked.
+  // Name the deployment you mean.
   if (!env.HASHLOCK_API_URL?.trim()) {
-    throw new Error('HASHLOCK_API_URL is required — the Hashlock Markets API base, e.g. https://hashlock.markets/api (opens at launch)');
+    throw new Error('HASHLOCK_API_URL is required — the Hashlock Markets API base, e.g. https://hashlock.markets/api');
   }
   const apiUrl = env.HASHLOCK_API_URL.trim().replace(/\/+$/, '');
   // The user-facing app base (for shareable order/deal links). Default: the API host with /api → /app.
@@ -70,9 +71,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     tronKey,
     btcKey,
     solanaKey,
-    evmRpc: (env.HASHLOCK_EVM_RPC || 'https://ethereum-sepolia-rpc.publicnode.com').replace(/\/+$/, ''),
+    evmRpc: (env.HASHLOCK_EVM_RPC || 'https://ethereum-rpc.publicnode.com').replace(/\/+$/, ''),
     evmRpcFor: (chain) => env[`HASHLOCK_EVM_RPC_${chain.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`]?.trim().replace(/\/+$/, '') || undefined,
-    tronHost: (env.HASHLOCK_TRON_HOST || 'https://nile.trongrid.io').replace(/\/+$/, ''),
+    tronHost: (env.HASHLOCK_TRON_HOST || 'https://api.trongrid.io').replace(/\/+$/, ''),
+    tronApiKey: env.HASHLOCK_TRON_API_KEY?.trim() || undefined,
     secretsPath: env.HASHLOCK_SECRETS_PATH || `${env.HOME || env.USERPROFILE || '.'}/.hashlock/mcp-secrets.json`,
   };
 }

@@ -12,7 +12,7 @@ RUN pnpm build && pnpm prune --prod
 FROM node:22-alpine
 WORKDIR /app
 ENV NODE_ENV=production
-# HASHLOCK_V1_URL (developer API base) and PORT are read at runtime; testnets only for now.
+# HASHLOCK_V1_URL (developer API base) and PORT are read at runtime.
 ENV HASHLOCK_V1_URL=https://api.hashlock.markets/v1 \
     PORT=8080
 COPY --from=build /app/node_modules ./node_modules

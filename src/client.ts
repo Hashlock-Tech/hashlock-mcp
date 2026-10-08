@@ -279,7 +279,7 @@ export class HashlockClient {
     // not — they use the leg's own pool (or `pool`) and the host — so only fund refuses without it.
     const pool = cc.tron.pool ?? cc.tron.sharedHtlc;
     if (!pool) throw new Error('TRON settlement not configured on this API');
-    return { fullHost: this.cfg.tronHost, sharedHtlc: cc.tron.sharedHtlc, pool };
+    return { fullHost: this.cfg.tronHost, apiKey: this.cfg.tronApiKey, sharedHtlc: cc.tron.sharedHtlc, pool };
   }
   async btcChain(): Promise<BtcChain> {
     const cc = await this.chainConfig();

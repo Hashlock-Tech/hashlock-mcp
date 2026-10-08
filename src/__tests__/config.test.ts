@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../config.js';
 
-// No default API URL (owner, 2026-10-01): the dev stand is not public and production opens at launch, so an
+// No default API URL (owner, 2026-10-01): the dev stand is not public, so an
 // install must name its deployment rather than silently reach one of them.
 describe('loadConfig', () => {
   it('refuses to start without HASHLOCK_API_URL, and says what to set', () => {
