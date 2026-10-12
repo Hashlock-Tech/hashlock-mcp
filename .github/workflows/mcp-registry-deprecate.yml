@@ -1,0 +1,42 @@
+name: MCP Registry — deprecate old versions
+
+# Marks every registry version of io.github.Hashlock-Tech/hashlock other than `keep` as deprecated.
+# Same auth as mcp-registry.yml (GitHub OIDC proves the io.github.Hashlock-Tech namespace) — a personal
+# `mcp-publisher login github` gets 403 unless that user's org membership is visible to the registry.
+on:
+  workflow_dispatch:
+    inputs:
+      keep:
+        description: 'The one version that stays active (the current one)'
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deprecate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install mcp-publisher (pinned + checksum)
+        run: |
+          curl -sSL -o mcp-publisher.tar.gz \
+            "https://github.com/modelcontextprotocol/registry/releases/download/v1.8.0/mcp-publisher_linux_amd64.tar.gz"
+          echo "1370446bbe74d562608e8005a6ccce02d146a661fbd78674e11cc70b9618d6cf  mcp-publisher.tar.gz" | sha256sum -c -
+          tar xzf mcp-publisher.tar.gz mcp-publisher
+
+      - name: Deprecate every version except the kept one
+        env:
+          KEEP: ${{ inputs.keep }}
+        run: |
+          set -euo pipefail
+          N=io.github.Hashlock-Tech/hashlock
+          versions=$(curl -sf "https://registry.modelcontextprotocol.io/v0/servers?search=$N&limit=100" | jq -r '.servers[]|(.server // .).version')
+          echo "$versions" | grep -qx "$KEEP" || { echo "::error::$KEEP is not a published version"; exit 1; }
+          ./mcp-publisher login github-oidc
+          for v in $versions; do
+            [ "$v" = "$KEEP" ] && continue
+            echo "deprecating $v"
+            ./mcp-publisher status --status deprecated \
+              --message "Superseded — use the latest version (hosted at https://hashlock.markets/mcp)" "$N" "$v"
+          done
