@@ -8,7 +8,7 @@
     "source": "github",
     "id": "1206275989"
   },
-  "version": "1.9.1",
+  "version": "1.9.2",
   "websiteUrl": "https://hashlock.markets",
   "packages": [
     {
@@ -78,6 +78,20 @@
           "description": "TronGrid API key (TronGrid throttles requests without one)",
           "isSecret": true,
           "name": "HASHLOCK_TRON_API_KEY"
+        }
+      ]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://hashlock.markets/mcp",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Optional: \"Bearer hk_live_…\" API key from https://hashlock.markets/developers. Without it, MCP clients sign in through OAuth.",
+          "isRequired": false,
+          "isSecret": true
         }
       ]
     }
