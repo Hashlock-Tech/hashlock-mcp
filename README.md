@@ -8,6 +8,7 @@
 
 [![npm](https://img.shields.io/npm/v/@hashlock-tech/mcp.svg)](https://www.npmjs.com/package/@hashlock-tech/mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![MCP Badge](https://lobehub.com/badge/mcp/hashlock-tech-hashlock-mcp)](https://lobehub.com/mcp/hashlock-tech-hashlock-mcp)
 
 ## What is this?
 
