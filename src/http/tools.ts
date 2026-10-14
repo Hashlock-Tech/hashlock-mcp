@@ -31,7 +31,7 @@ const qs = (o: Record<string, string | number | undefined>) => {
 
 export function registerHostedTools(server: McpServer, callV1: CallV1): void {
   // ── read ────────────────────────────────────────────────────────────────
-  server.tool('whoami', 'The account behind the API key: its scopes (read/taker/maker) and, per chain, `login` (the wallet it signed in with, and where the account is PAID) plus `proven` (wallets it may TRADE from). Verify auth, and check what you may GIVE before quoting.', {}, async () =>
+  server.tool('whoami', 'The account behind the API key: its scopes (read/taker/maker) and, per chain, `login` (the wallet it signed in with, and where the account is PAID) plus `proven` (wallets it proved). Over an API key you may GIVE from the login wallet on any chain and from a proven wallet on EVM only — TRON and Solana give from the login wallet or one linked in a signed-in web session; on Bitcoin any wallet may pay, but the refund key must be one of those. Verify auth, and check what you may give before quoting.', {}, async () =>
     out(await callV1('/me')),
   );
 
@@ -53,6 +53,15 @@ export function registerHostedTools(server: McpServer, callV1: CallV1): void {
   );
 
   server.tool('get_rfq', 'Details of one RFQ by id.', { id: z.string().uuid() }, async ({ id }) => out(await callV1(`/rfqs/${id}`)));
+
+  server.tool(
+    'list_my_rfqs',
+    'Your own RFQs, newest first — private ones and every status included (the board shows only public ' +
+      'open ones). Check here before re-posting an RFQ whose create_rfq call timed out: it may have been ' +
+      'created anyway. Cursor-paginated.',
+    { limit: z.number().int().min(1).max(100).optional(), cursor: z.string().optional() },
+    async (a) => out(await callV1(`/rfqs/mine${qs(a)}`)),
+  );
 
   server.tool(
     'list_rfq_threads',
@@ -136,9 +145,10 @@ export function registerHostedTools(server: McpServer, callV1: CallV1): void {
   server.tool(
     'prove_wallet',
     'Record a wallet you proved: send the message from wallet_proof_message and its signature. Needed ' +
-      'before this account can create an order that GIVES an asset on that chain. A proof only widens ' +
-      'what you may TRADE — it never changes where this account is PAID (the ramp payout address), which ' +
-      'only a wallet session can set. 409 = that wallet belongs to another account.',
+      'for an EVM wallet you want to give from (set it as your refund address on the leg). On TRON and Solana ' +
+      'a proof made with the API key lets you give nothing — those legs fund from the login wallet or one ' +
+      'linked in a signed-in web session; on Bitcoin any wallet may pay, but the refund key must be one of those. A proof never changes where this account is PAID. ' +
+      '409 = that wallet belongs to another account.',
     {
       family: z.enum(['evm', 'tron', 'solana', 'bitcoin']),
       address: ADDRESS,
@@ -160,6 +170,17 @@ export function registerHostedTools(server: McpServer, callV1: CallV1): void {
   );
 
   // ── trade (scopes enforced by /v1) ────────────────────────────────────────
+  server.tool(
+    'request_listing',
+    'Ask Hashlock to list a token by its contract (EVM) or mint (Solana) address (scope: taker; 20 an hour). ' +
+      'It runs the safety and traction checks: status "listed" (now tradable), "pending" (not yet — `reasons` ' +
+      'says what is missing; re-checked hourly for a week), "closed" (was listed, does not pass yet), ' +
+      '"rejected"/"delisted" (final). Bankr and Virtuals launches (Base, Robinhood Chain, Solana) and Clanker launches ' +
+      '(Base, Robinhood Chain) are checked automatically during their first week; after that, or for any other token, ask here.',
+    { chain: z.string().describe('e.g. "base", "robinhood", "ethereum", "solana"'), address: z.string() },
+    async ({ chain, address }) => out(await callV1('/assets', { method: 'POST', body: { chain, address } })),
+  );
+
   server.tool(
     'create_rfq',
     'Post a trade request (scope: taker). direction=sell_base → you GIVE base; buy_base → you RECEIVE it. visibility=private needs askAmount. Amounts are base-unit integer strings.',
@@ -226,7 +247,11 @@ export function registerHostedTools(server: McpServer, callV1: CallV1): void {
   // ── settlement builders (return UNSIGNED tx — sign with your own wallet) ────
   server.tool(
     'build_fund',
-    'Build the UNSIGNED transaction(s) to fund your leg. Returns chain-specific signing material (EVM txs / BTC pay-to / TRON txs). Sign with your own key/HSM/wallet, then submit via broadcast_tx. The server never holds your keys.',
+    'Build the UNSIGNED transaction(s) to fund your leg. Returns chain-specific signing material (EVM txs / BTC pay-to / ' +
+      'TRON txs). Sign with your own key/HSM/wallet, then submit via broadcast_tx. The server never holds your keys. ' +
+      'A 409 is a state, not a failure: "already funded" / "escrow is already paid" (never pay the escrow again — on ' +
+      'Bitcoin the second one may carry feePayTo/feeAmountSats when only the protocol fee is not seen yet), "cannot fund yet" / a missing address (wait or set it, then retry). On ' +
+      'Bitcoin after a short payment amountSats is only the remainder (topUp: true). 503 = could not check — retry.',
     { id: z.string().uuid(), leg: z.enum(['a', 'b']) },
     async ({ id, leg }) => out(await callV1(`/swaps/${id}/legs/${leg}/fund`, { method: 'POST' })),
   );
@@ -235,8 +260,9 @@ export function registerHostedTools(server: McpServer, callV1: CallV1): void {
     'build_claim',
     'Build the UNSIGNED claim (reveals the secret on-chain). Requires both legs funded. secret = 32-byte ' +
       'hex preimage. EVM returns txs to sign and send; TRON returns a transaction whose txID you sign; ' +
-      'Bitcoin returns sign="btc-sighash" — sign sighashHex with secp256k1 and pass it back through ' +
-      'broadcast_tx together with psbtBase64 and preimageHex, and the witness is assembled for you.',
+      'Bitcoin returns sign="btc-sighash" with sighashHexes — one per escrow input: sign EACH with secp256k1 ' +
+      'and pass them back through broadcast_tx as { psbtBase64, signaturesHex: [...], preimageHex }, and the ' +
+      'witness is assembled for you.',
     { id: z.string().uuid(), leg: z.enum(['a', 'b']), secret: z.string() },
     async ({ id, leg, secret }) => out(await callV1(`/swaps/${id}/legs/${leg}/claim`, { method: 'POST', body: { secret } })),
   );
@@ -254,7 +280,8 @@ export function registerHostedTools(server: McpServer, callV1: CallV1): void {
     'Relay a transaction you signed yourself. chain ∈ {evm, tron, bitcoin, solana}. signed = the ' +
       'chain-specific payload: EVM a raw 0x transaction, TRON the signed transaction object, Solana the ' +
       'base64 transaction from a build step with your signature in it, Bitcoin either a raw hex ' +
-      'transaction or { psbtBase64, signatureHex, preimageHex? } from a build step — the last form has ' +
+      'transaction or { psbtBase64, signaturesHex: [...], preimageHex? } from a build step (one signature ' +
+      'per entry of sighashHexes; omit preimageHex for a refund) — the last form has ' +
       'the witness assembled here, so you never have to serialise Bitcoin script yourself.',
     // 'solana' was missing while the build steps above already returned sign:"solana-tx" and /v1 already
     // accepted it — so a hosted integrator could build and sign a Solana leg and then not relay it.
