@@ -31,7 +31,7 @@ const qs = (o: Record<string, string | number | undefined>) => {
 
 export function registerHostedTools(server: McpServer, callV1: CallV1): void {
   // ── read ────────────────────────────────────────────────────────────────
-  server.tool('whoami', 'The account behind the API key: its scopes (read/taker/maker) and, per chain, `login` (the wallet it signed in with, and where the account is PAID) plus `proven` (wallets it proved). Over an API key you may GIVE from the login wallet on any chain and from a proven wallet on EVM only — TRON and Solana give from the login wallet or one linked in a signed-in web session; on Bitcoin any wallet may pay, but the refund key must be one of those. Verify auth, and check what you may give before quoting.', {}, async () =>
+  server.tool('whoami', 'The account behind the API key: its scopes (read/taker/maker) and, per chain, `login` (the wallet it signed in with, and where the account is PAID) plus `proven` (wallets it proved). Over an API key you may GIVE from the login wallet on any chain and from a proven wallet on EVM. To trade on another chain (TRON, Solana, Bitcoin) prove that wallet WITH an authorisation from your login wallet (wallet_proof_message with `login`, then prove_wallet with `authorization`): it then pays, refunds and funds like a login wallet. Verify auth, and check what you may give before quoting.', {}, async () =>
     out(await callV1('/me')),
   );
 
@@ -112,51 +112,66 @@ export function registerHostedTools(server: McpServer, callV1: CallV1): void {
 
   // ── wallets: what this account may GIVE, and how to widen it ───────────────
   // An account can only offer an asset on a chain it has proved a wallet on, and an API key starts with
-  // just the address its owner signed in with. These three are the whole of widening that — and they
-  // add TRADING reach only: a proof never becomes the account's payout identity, which needs a wallet
-  // session. The agent signs with its own key; nothing here holds one.
+  // just the address its owner signed in with. These three are the whole of widening that. A key-only
+  // proof adds EVM giving; one the login wallet authorises (#148) counts on every chain, payouts included.
+  // The agent signs with its own key; nothing here holds one.
   server.tool(
     'wallet_proof_message',
     'Start proving a wallet you hold: returns the EXACT message to sign for `address`, and the nonce ' +
       'inside it. Sign that message with that wallet (EVM personal_sign · TRON signMessageV2 · Solana ' +
       'ed25519 signMessage, base58 · Bitcoin BIP-322) and pass it to prove_wallet unchanged. The nonce ' +
-      'is single-use and short-lived, and it is NOT a login nonce — this signature cannot open a session.',
+      'is single-use and short-lived, and it is NOT a login nonce — this signature cannot open a session. ' +
+      'Pass `login` (your account\'s login wallet) to also get `authorizationMessage`: sign THAT with the login ' +
+      'wallet and send it as prove_wallet `authorization` — the wallet then belongs to this account in full ' +
+      '(it is paid, refunds, funds TRON and can sign in), which is how you trade on another chain without a browser.',
     // ALPHANUMERIC, and bounded. This string is pasted into text a wallet will sign, and the API reads
     // the nonce out of that text — so a newline here would let an injected `Nonce:` line choose which
     // nonce pool the signature spends, turning a link proof into a login credential for the account.
     // Every address on all four families is [0-9A-Za-z], so the bound costs a real caller nothing.
-    { address: ADDRESS.describe('the address you are about to prove') },
-    async ({ address }) => {
+    {
+      address: ADDRESS.describe('the address you are about to prove'),
+      login: ADDRESS.optional().describe("your account's login wallet, to also get the authorisation message it must sign"),
+    },
+    async ({ address, login }) => {
       const r = await callV1('/wallets/nonce');
       if (r.status >= 400) return out(r);
       const nonce = (r.json as { nonce?: string }).nonce;
       // Built here, not by the model: the server checks for the product marker, the words "link this
       // wallet" and the nonce, and an agent that paraphrases any of them gets a 400 it cannot diagnose.
-      return out({
-        status: 200,
-        json: {
-          message: `Hashlock Markets — link this wallet.\n\nAddress: ${address}\nNonce: ${nonce}\nIssued At: ${new Date().toISOString()}`,
-          nonce,
-        },
-      });
+      const json: Record<string, unknown> = {
+        message: `Hashlock Markets — link this wallet.\n\nAddress: ${address}\nNonce: ${nonce}\nIssued At: ${new Date().toISOString()}`,
+        nonce,
+      };
+      if (login) {
+        // A second nonce from its own pool: the login wallet's authorisation (#148). Same rules — product
+        // marker, the words "authorise this wallet", both addresses, one nonce.
+        const a = await callV1('/wallets/nonce?purpose=authorize');
+        if (a.status >= 400) return out(a);
+        const n2 = (a.json as { nonce?: string }).nonce;
+        json.authorizationMessage = `Hashlock Markets — authorise this wallet for my account.\n\nAccount wallet: ${login}\nWallet: ${address}\nNonce: ${n2}\nIssued At: ${new Date().toISOString()}`;
+      }
+      return out({ status: 200, json });
     },
   );
 
   server.tool(
     'prove_wallet',
-    'Record a wallet you proved: send the message from wallet_proof_message and its signature. Needed ' +
-      'for an EVM wallet you want to give from (set it as your refund address on the leg). On TRON and Solana ' +
-      'a proof made with the API key lets you give nothing — those legs fund from the login wallet or one ' +
-      'linked in a signed-in web session; on Bitcoin any wallet may pay, but the refund key must be one of those. A proof never changes where this account is PAID. ' +
-      '409 = that wallet belongs to another account.',
+    'Record a wallet you proved: send the message from wallet_proof_message and its signature. Alone it ' +
+      'lets you give from that wallet on EVM only. With `authorization` (the authorizationMessage signed by your ' +
+      'login wallet) it counts on every chain: payouts, Bitcoin/Solana refunds and TRON funding — the answer says ' +
+      '`authorised: true`. 409 = that wallet belongs to another account.',
     {
       family: z.enum(['evm', 'tron', 'solana', 'bitcoin']),
       address: ADDRESS,
       message: z.string(),
       signature: z.string(),
+      authorization: z
+        .object({ address: ADDRESS, message: z.string(), signature: z.string() })
+        .optional()
+        .describe('the login wallet signing authorizationMessage'),
     },
-    async ({ family, address, message, signature }) =>
-      out(await callV1(`/wallets/${family}`, { method: 'POST', body: { address, message, signature } })),
+    async ({ family, address, message, signature, authorization }) =>
+      out(await callV1(`/wallets/${family}`, { method: 'POST', body: { address, message, signature, ...(authorization ? { authorization } : {}) } })),
   );
 
   server.tool(
