@@ -37,6 +37,10 @@ jobs:
           for v in $versions; do
             [ "$v" = "$KEEP" ] && continue
             echo "deprecating $v"
-            ./mcp-publisher status --status deprecated \
-              --message "Superseded — use the latest version (hosted at https://hashlock.markets/mcp)" "$N" "$v"
+            # A version deprecated by an earlier run answers 400 "No changes to apply" — already done, not a failure.
+            if ! out=$(./mcp-publisher status --status deprecated \
+              --message "Superseded — use the latest version (hosted at https://hashlock.markets/mcp)" "$N" "$v" 2>&1); then
+              echo "$out"
+              grep -q "No changes to apply" <<<"$out" || exit 1
+            fi
           done
