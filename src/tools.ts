@@ -59,7 +59,8 @@ export function registerTools(server: McpServer, api: HashlockClient, secrets: S
     'Asset registry: every tradeable asset with its chain, symbol and decimals. Reference assets in other tools as "SYMBOL@chain" (e.g. "USDT@ethereum", "BTC@bitcoin").',
     {},
     wrapTool(async () => {
-      const assets = await api.assets();
+      // Open assets only: the registry also carries closed tokens so swaps already on them still resolve.
+      const assets = (await api.assets()).filter((a) => a.enabled !== false);
       return okContent(assets.map((a) => ({ ref: `${a.symbol}@${a.chain}`, id: a.id, decimals: a.decimals, name: a.name })));
     }),
   );

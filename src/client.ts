@@ -54,6 +54,8 @@ export interface Asset {
   decimals: number;
   address: string | null; // null => native coin
   isNative?: boolean;
+  /** false: closed for new orders (listing review or operator) — kept so swaps already on it still resolve. */
+  enabled?: boolean;
 }
 export interface Rfq {
   id: string;
@@ -573,8 +575,11 @@ export class HashlockClient {
     );
     if (matches.length === 1) return matches[0]!;
     if (matches.length === 0) throw new Error(`unknown asset "${r}" — call list_assets for the registry`);
+    // A listed token can share SYMBOL@chain with a closed one (a relaunch): the open one is meant.
+    const open = matches.filter((a) => a.enabled !== false);
+    if (open.length === 1) return open[0]!;
     throw new Error(
-      `ambiguous asset "${r}" — matches ${matches.map((a) => `${a.symbol}@${a.chain}`).join(', ')}; use SYMBOL@chain`,
+      `ambiguous asset "${r}" — matches ${matches.map((a) => `${a.symbol}@${a.chain}`).join(', ')}; ${chain ? 'use the asset id from list_assets' : 'use SYMBOL@chain'}`,
     );
   }
 
