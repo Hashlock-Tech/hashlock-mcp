@@ -37,10 +37,13 @@ jobs:
         with:
           context: .
           push: true
-          # :latest is what the deploy pulls; :sha for traceability.
+          # The branch tag is what a stand deploys: dev pulls :develop, staging and production pull :main, so a
+          # develop push never reaches production. :latest follows main only (compose's default); :sha for
+          # traceability.
           tags: |
-            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.ref_name }}
             ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ github.ref == 'refs/heads/main' && format('{0}:latest', env.IMAGE) || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       # Sign what was just pushed, keyless and BY DIGEST (tags can be moved by anyone with push rights).
