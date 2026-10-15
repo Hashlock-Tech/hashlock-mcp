@@ -36,11 +36,20 @@ jobs:
           ./mcp-publisher login github-oidc
           for v in $versions; do
             [ "$v" = "$KEEP" ] && continue
-            echo "deprecating $v"
-            # A version deprecated by an earlier run answers 400 "No changes to apply" — already done, not a failure.
+            # Versions already deprecated are skipped. The per-version endpoint is the one that reports status
+            # (the search list shows every version as active).
+            status=$(curl -sf --retry 3 --retry-all-errors "https://registry.modelcontextprotocol.io/v0/servers/${N/\//%2F}/versions/$v" \
+              | jq -r '._meta["io.modelcontextprotocol.registry/official"].status // empty') || status=
+            [ "$status" = deprecated ] && continue
+            echo "deprecating $v (status: ${status:-unreadable})"
+            # A version deprecated in the meantime answers 400 "No changes to apply" — already done, not a failure.
             if ! out=$(./mcp-publisher status --status deprecated \
               --message "Superseded — use the latest version (hosted at https://hashlock.markets/mcp)" "$N" "$v" 2>&1); then
               echo "$out"
-              grep -q "No changes to apply" <<<"$out" || exit 1
+              grep -q "No changes to apply" <<<"$out" && continue
+              # Some old versions answer every call with 500 (0.1.14 on 2026-10-15). Only a version whose status
+              # could not be read either is passed over; a readable active version that will not deprecate fails.
+              if [ -z "$status" ]; then echo "::warning::$v: status unreadable and deprecate failed — skipped"; continue; fi
+              exit 1
             fi
           done
