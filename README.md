@@ -33,7 +33,25 @@ Settlement **signing** (funding and claiming the HTLCs) stays with your own wall
 
 ## Install
 
-Local stdio via `npx` (Claude Desktop / Cursor / Windsurf `mcpServers` config):
+```bash
+HASHLOCK_API_URL=https://hashlock.markets/api npx -y @hashlock-tech/mcp
+```
+
+Minimal config (read-only — browse assets and the RFQ board, no key needed):
+
+```json
+{
+  "mcpServers": {
+    "hashlock": {
+      "command": "npx",
+      "args": ["-y", "@hashlock-tech/mcp"],
+      "env": { "HASHLOCK_API_URL": "https://hashlock.markets/api" }
+    }
+  }
+}
+```
+
+To trade, add the agent's own key(s) — local stdio via `npx` (Claude Desktop / Cursor / Windsurf `mcpServers` config):
 
 ```json
 {
