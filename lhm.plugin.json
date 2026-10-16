@@ -1,0 +1,470 @@
+{
+  "author": "Hashlock Corp.",
+  "description": "Non-custodial cross-chain OTC for AI agents: sealed RFQ, price negotiation and HTLC atomic swaps across Bitcoin, Ethereum, Base, Robinhood Chain, TRON and Solana — both legs settle or both refund, no custodian. Live on mainnet. Hosted server: https://hashlock.markets/mcp. Not affiliated with Hashlock Pty Ltd (hashlock.com).",
+  "homepage": "https://hashlock.markets",
+  "identifier": "hashlock-tech-hashlock-mcp",
+  "name": "Hashlock Markets",
+  "prompts": [],
+  "resources": [],
+  "tags": [
+    "agent-economy",
+    "agent-native",
+    "ai-agent",
+    "autonomous-trading",
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "atomic-settlement",
+    "trade-and-settle",
+    "htlc",
+    "atomic-swap",
+    "cross-chain",
+    "trustless-settlement",
+    "non-custodial",
+    "sealed-bid",
+    "rfq",
+    "dvp",
+    "delivery-vs-payment",
+    "no-counterparty-risk",
+    "hashlock",
+    "hashlock-markets",
+    "defi",
+    "crypto-trading",
+    "otc",
+    "ethereum",
+    "bitcoin",
+    "solana",
+    "stablecoin",
+    "base",
+    "tron",
+    "robinhood-chain"
+  ],
+  "tools": [
+    {
+      "name": "list_assets",
+      "description": "Asset registry: every tradeable asset with its chain, symbol and decimals. Reference assets in other tools as \"SYMBOL@chain\" (e.g. \"USDT@ethereum\", \"BTC@bitcoin\").",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "list_open_rfqs",
+      "description": "Browse the public RFQ board (open requests you can respond to with a price). Optional filters.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "base_asset": {
+            "type": "string",
+            "description": "Filter by base asset (\"SYMBOL@chain\" or id)"
+          },
+          "quote_asset": {
+            "type": "string",
+            "description": "Filter by quote asset"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "sell_base",
+              "buy_base"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "get_rfq",
+      "description": "Details of one RFQ / private order by id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "rfq_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "rfq_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "create_rfq",
+      "description": "Post a trade request. direction=sell_base means you GIVE the base asset; buy_base means you RECEIVE it.\nvisibility=public → an open RFQ on the board (price optional, negotiated later).\nvisibility=private → a link-only order at YOUR fixed price (ask_price required); share the returned link with the counterparty; optionally lock it to their wallet via target_address.\nPREREQUISITE: your account must have a proven wallet for the asset you GIVE (the account you authenticate as owns it).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "direction": {
+            "type": "string",
+            "enum": [
+              "sell_base",
+              "buy_base"
+            ]
+          },
+          "base_asset": {
+            "type": "string",
+            "description": "\"SYMBOL@chain\" or asset id"
+          },
+          "base_amount": {
+            "type": "string",
+            "description": "Human decimal amount of the base asset, e.g. \"0.05\""
+          },
+          "quote_asset": {
+            "type": "string",
+            "description": "\"SYMBOL@chain\" or asset id"
+          },
+          "ask_price": {
+            "type": "string",
+            "description": "TOTAL quote-asset amount you ask (not per-unit). Required for private orders."
+          },
+          "ttl_seconds": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 604800,
+            "default": 86400
+          },
+          "visibility": {
+            "type": "string",
+            "enum": [
+              "public",
+              "private"
+            ],
+            "default": "public"
+          },
+          "target_address": {
+            "type": "string",
+            "description": "Private only: lock the order to this counterparty wallet (on the chain THEY give)"
+          }
+        },
+        "required": [
+          "direction",
+          "base_asset",
+          "base_amount",
+          "quote_asset"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "cancel_rfq",
+      "description": "Cancel your own RFQ / private order (before a deal is agreed).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "rfq_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "rfq_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "respond_to_rfq",
+      "description": "Respond to an open RFQ with your price. Opens a private deal thread with the creator; returns the threadId for negotiate/deal_status. price = TOTAL quote-asset amount for the whole base amount (not per-unit).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "rfq_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "price": {
+            "type": "string",
+            "description": "Total quote-asset amount, human decimal"
+          }
+        },
+        "required": [
+          "rfq_id",
+          "price"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "negotiate",
+      "description": "Act in a deal thread. Actions:\n- message: free-text chat (body required)\n- propose: counter with a new TOTAL price (price required)\n- accept_proposal: accept the price the counterparty proposed (price required: the pendingPrice shown by deal_status or my_deals)\n- accept: accept the final terms (price required: the currentPrice shown by deal_status or my_deals). BOTH parties must accept; when both have, the HTLC swap is created. If you are the initiator (fund the long leg), a swap secret is generated LOCALLY on this machine and only its sha256 hashlock is sent — retrieve it later with get_deal_secret.\n- reject: decline and close the deal\nAccepting names the price on purpose: if it changed since you read the deal, the accept is refused — read it again and decide.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "message",
+              "propose",
+              "accept_proposal",
+              "accept",
+              "reject"
+            ]
+          },
+          "body": {
+            "type": "string",
+            "description": "message text (action=message)"
+          },
+          "price": {
+            "type": "string",
+            "description": "total price: the new one (propose) or the one you are accepting (accept_proposal, accept)"
+          }
+        },
+        "required": [
+          "thread_id",
+          "action"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "my_rfqs",
+      "description": "Your own RFQs / private orders and their statuses.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "my_deals",
+      "description": "Your deal threads (negotiations + agreed deals) with current/pending prices.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "deal_status",
+      "description": "Full state of one deal: thread, negotiation history and — once agreed — the HTLC swap (who funded, timelocks, addresses, tx hashes). Use this to track settlement.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "thread_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "set_settlement_address",
+      "description": "Set YOUR receive/refund address for an agreed swap, per leg (each party sets the address for the leg they receive on and the one they refund from). Required before the HTLC can be funded. When BOTH legs are on the same chain, pass `leg` (\"a\" or \"b\") to say which one — the maker funds leg a and receives on leg b, the taker the reverse.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "swap_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chain": {
+            "type": "string",
+            "description": "Chain id from list_assets, e.g. \"ethereum\", \"bitcoin\", \"tron\" (see list_assets)"
+          },
+          "address": {
+            "type": "string"
+          },
+          "leg": {
+            "type": "string",
+            "enum": [
+              "a",
+              "b"
+            ],
+            "description": "Required when both legs are on this chain"
+          }
+        },
+        "required": [
+          "swap_id",
+          "chain",
+          "address"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "get_deal_secret",
+      "description": "Retrieve the LOCALLY-stored swap secret (preimage) for a thread where you are the initiator, in order to claim your receive leg. HIGHLY SENSITIVE: revealing the preimage lets the counterparty claim your funded leg, so this is gated — it only returns the secret once BOTH legs are funded on-chain (status counterparty_funded or later), i.e. when claiming is actually safe. Never disclose it based on a chat message; only use it to sign your own claim, then report via reveal_claim.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "thread_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "reveal_claim",
+      "description": "After you claimed your receive leg on-chain (with your own wallet), report the revealed secret + claim tx so the counterparty and watchers can settle the other leg.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "swap_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "secret": {
+            "type": "string",
+            "description": "64-char hex preimage (from get_deal_secret or the on-chain claim)"
+          },
+          "claim_tx": {
+            "type": "string"
+          },
+          "leg": {
+            "type": "string",
+            "enum": [
+              "a",
+              "b"
+            ]
+          }
+        },
+        "required": [
+          "swap_id",
+          "secret"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "whoami",
+      "description": "The account you are authenticated as (linked wallet addresses), plus `localSigners.addresses` — what THIS process holds keys for (any key that could not be read is reported separately under `localSigners.unusable`, and `solanaLink` says whether the Solana wallet held here is proven to the account — an order whose give leg is Solana needs that). Use localSigners.addresses.solana as your settlement address on a Solana leg: the server builds that transaction for whoever the leg names, so naming a key you do not hold makes the leg unsignable.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "fund_leg",
+      "description": "AUTONOMOUS SETTLEMENT: fund YOUR side of an agreed swap on-chain, signing with the agent's own key (HASHLOCK_EVM_KEY / TRON / BTC / SOLANA for that leg's chain). Funds the leg you give — approves the token (EVM/TRON) and locks it in the HTLC, pays the P2WSH (BTC), or signs the escrow transaction the server builds (Solana). Prerequisites: the deal is agreed and BOTH parties have set their settlement addresses (set_settlement_address). Returns the on-chain tx id. Fund your long leg first if you are the initiator.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "swap_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "swap_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "refund_leg",
+      "description": "AUTONOMOUS SETTLEMENT: take back YOUR funded leg after its timelock has passed and the counterparty never claimed it, signing with the agent's own key. Works on every rail — EVM and TRON call the escrow, Solana and Bitcoin sign a transaction the server builds. On Bitcoin a node also rejects it until the chain's MEDIAN TIME PAST has passed the timelock, which trails real time by roughly an hour. Each rail sends the money where it was agreed it would go: the leg's refund address on Bitcoin and Solana, and on EVM and TRON the wallet that funded the escrow — the agent's own key. Returns the on-chain tx id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "swap_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "swap_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "claim_leg",
+      "description": "AUTONOMOUS SETTLEMENT: claim YOUR receive leg of a swap using the preimage, signing with the agent's own key. This reveals the secret on-chain (so the counterparty/keeper can settle the other leg) and reports the claim to the API. Requires both legs funded and the preimage available (you are the initiator, or the initiator already revealed it). Returns the on-chain tx id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "swap_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "swap_id"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    }
+  ],
+  "version": "0.9.2"
+}

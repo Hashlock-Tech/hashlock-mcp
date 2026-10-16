@@ -82,7 +82,9 @@
     "ethereum",
     "bitcoin",
     "solana",
-    "sui",
+    "base",
+    "tron",
+    "robinhood-chain",
     "stablecoin",
     "rwa"
   ],
