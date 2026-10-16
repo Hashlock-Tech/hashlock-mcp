@@ -1,7 +1,7 @@
 {
   "author": "Hashlock Corp.",
   "category": "stocks-finance",
-  "description": "Non-custodial cross-chain OTC for AI agents: sealed RFQ, price negotiation and HTLC atomic swaps across Bitcoin, Ethereum, Base, Robinhood Chain, TRON and Solana — both legs settle or both refund, no custodian. Live on mainnet. Hosted server: https://hashlock.markets/mcp. Not affiliated with Hashlock Pty Ltd (hashlock.com).",
+  "description": "Non-custodial cross-chain OTC for AI agents: sealed RFQ, price negotiation and HTLC atomic swaps across Bitcoin, Ethereum, Base, Robinhood Chain, TRON and Solana — both legs settle or both refund, no custodian. Live on mainnet. Hosted server: https://hashlock.markets/mcp.",
   "homepage": "https://hashlock.markets",
   "icon": "https://hashlock.markets/icon.svg",
   "identifier": "hashlock-tech-hashlock-mcp",
