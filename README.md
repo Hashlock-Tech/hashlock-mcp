@@ -17,7 +17,7 @@ The canonical [Model Context Protocol](https://modelcontextprotocol.io) server f
 1. **Browse** the asset registry and the public RFQ board
 2. **Post** a public RFQ or a private fixed-price order (shareable link)
 3. **Respond** to requests with a price; **negotiate** (counter / accept / decline) in the deal thread
-4. **Agree** — both parties accept → an HTLC swap is created
+4. **Agree** — accept the other side's price → an HTLC swap is created (your own quote or counter already counts as your acceptance)
 5. **Track settlement** — who funded, timelocks, tx hashes — and manage receive/refund addresses
 
 Settlement **signing** (funding and claiming the HTLCs) stays with your own wallet — the server never holds keys or funds. The swap **secret is generated locally** on your machine and only its `sha256` hashlock is sent; retrieve it with `get_deal_secret` when it's time to claim.
@@ -171,7 +171,7 @@ Env: `HASHLOCK_V1_URL` (developer-API base, default `https://api.hashlock.market
 | `create_rfq` | Post a public RFQ or private fixed-price order |
 | `cancel_rfq` | Cancel your own request |
 | `respond_to_rfq` | Respond with a price → opens a deal thread |
-| `negotiate` | `message` / `propose` / `accept_proposal` / `accept` / `reject` — accepting names the price you read, and is refused if it moved; `accept_proposal` takes their counter and accepts the deal at it in one step |
+| `negotiate` | `message` / `propose` / `accept_proposal` / `accept` / `reject` — accepting names the price you read, and is refused if it moved; your own quote or counter counts as your acceptance, so you accept only the other side's price; `accept_proposal` takes their counter and agrees the deal in one step |
 | `my_rfqs`, `my_deals` | Your requests and deal threads |
 | `deal_status` | Thread + negotiation history + HTLC swap state |
 | `set_settlement_address` | Your receive/refund address per chain |

@@ -76,7 +76,7 @@ TAKER                          HASHLOCK                         MAKER
 create_rfq  ─────────────▶  sealed RFQ board  ◀───────────── list_open_rfqs
             ◀── list_rfq_threads ──  private thread  ◀────── quote_rfq
 propose_price / accept_proposal  ◀──── negotiation ────▶  propose_price / accept_proposal
-accept_terms(price, hashlock) ─▶  swap created  ◀─ accept_terms(price, hashlock)
+accept the OTHER side's price ─▶  swap created  ◀─ (a quote or a counter is its author's acceptance)
 
                  ┌── initiator (holds the secret) funds the LONG leg first
 SETTLEMENT       ├── counterparty funds the SHORT leg
@@ -199,10 +199,12 @@ A token you launched or hold can trade here block-for-block once it is listed �
 2. Collect quotes: `list_rfq_threads` / `GET /v1/rfqs/{id}/threads` lists the thread each maker's quote
    opened. Poll it, or register a `quote.created` webhook if you have a public URL.
 3. Negotiate in a thread (`get_thread`): `propose_price` to counter, `accept_proposal` to take the other
-   side's pending price. Pass `accept: true` (and, as the initiator, your hashlock) to accept the deal at
-   that price in the same step — then only the other side's `accept_terms` is left.
-4. Agree: `accept_terms` / `POST /v1/threads/{id}/accept` with the price you read and your hashlock (see
-   §4). Both sides must accept; the second accept creates the swap.
+   side's pending price. A price you propose is a price you agree to (as the initiator, pass your hashlock
+   with it); taking the other side's with `accept: true` (and, as the initiator, your hashlock) agrees the
+   deal in that step.
+4. Agree: `accept_terms` / `POST /v1/threads/{id}/accept` on a maker's quote, with the price you read and
+   your hashlock (see §4). The quote is the maker's acceptance, so yours creates the swap. Accept only a
+   price the other side set — never your own.
 5. Changed your mind before agreeing? `cancel_rfq`.
 
 ## 3b. Make markets — you are the maker
@@ -213,11 +215,15 @@ A token you launched or hold can trade here block-for-block once it is listed �
 2. `quote_rfq` / `POST /v1/rfqs/{id}/quotes` with your total price in the quote asset. That opens a thread
    with the taker. Hold what you would give, plus gas, in the wallet that will fund the leg (§5) — the quote
    checks balances only roughly.
-3. Negotiate and accept exactly as above. As a maker you pay no protocol fee.
+   Your quote is your acceptance: when the taker accepts it, the deal is agreed. If the returned thread shows
+   `makerAccepted: false`, you are the initiator — call `accept_terms` on it right away with your hashlock.
+3. Negotiate exactly as above. As a maker you pay no protocol fee.
 
-## 4. The secret — do this on every accept
+## 4. The secret — one per deal thread
 
-Generate a fresh 32-byte secret, keep it private, and send only its SHA-256:
+Generate one 32-byte secret per deal thread, keep it private, and send only its SHA-256 — the same hashlock
+on every accept and every proposal in that thread (a new one each time can leave the swap on a hashlock
+whose secret you no longer hold):
 
 ```text
 secret   = 32 random bytes                      (store it; never send it to anyone)

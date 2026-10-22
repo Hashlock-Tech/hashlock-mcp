@@ -222,21 +222,25 @@ export function registerHostedTools(server: McpServer, callV1: CallV1): void {
 
   server.tool(
     'quote_rfq',
-    'Quote an open RFQ (scope: maker) — opens a settlement thread. quoteAmount = total quote-asset amount in base units.',
+    'Quote an open RFQ (scope: maker) — opens a settlement thread. quoteAmount = total quote-asset amount in base units. Your quote is your acceptance: when the requester accepts, the deal is agreed. Only if the returned thread shows makerAccepted: false (you are the initiator) call accept_terms on it right away with your hashlock.',
     { id: z.string().uuid(), quoteAmount: z.string().regex(/^\d+$/) },
     async ({ id, quoteAmount }) => out(await callV1(`/rfqs/${id}/quotes`, { method: 'POST', body: { quoteAmount } })),
   );
 
   server.tool(
     'propose_price',
-    'Counter with a new total price on a thread (base units).',
-    { id: z.string().uuid(), quoteAmount: z.string().regex(/^\d+$/) },
-    async ({ id, quoteAmount }) => out(await callV1(`/threads/${id}/propose`, { method: 'POST', body: { quoteAmount } })),
+    'Counter with a new total price on a thread (base units). Proposing is agreeing to it: when the counterparty takes it with accept_proposal(accept: true), the deal is agreed. The initiator (funds the long leg) agrees only with its hashlock = sha256(secret), so pass it here.',
+    {
+      id: z.string().uuid(),
+      quoteAmount: z.string().regex(/^\d+$/),
+      hashlock: z.string().optional().describe("32-byte hex sha256(secret) — the initiator's; ignored from the other side"),
+    },
+    async ({ id, quoteAmount, hashlock }) => out(await callV1(`/threads/${id}/propose`, { method: 'POST', body: { quoteAmount, hashlock } })),
   );
 
   server.tool(
     'accept_proposal',
-    "Accept the counterparty's pending price on a thread. Pass the pendingAmount you read from get_thread: if a newer counter replaced it, this is refused — read again and decide. With accept: true it also accepts the deal at that price in the same step (COMMITS, like accept_terms), so only the counterparty's accept is left; the initiator (funds the long leg) then passes hashlock = sha256(secret) here. Without accept, both sides accept afterwards with accept_terms.",
+    "Accept the counterparty's pending price on a thread. Pass the pendingAmount you read from get_thread: if a newer counter replaced it, this is refused — read again and decide. With accept: true it also accepts the deal at that price in the same step (COMMITS, like accept_terms) — the proposer agreed by proposing, so this agrees the deal; the initiator (funds the long leg) passes hashlock = sha256(secret) here. Without accept, you accept afterwards with accept_terms.",
     {
       id: z.string().uuid(),
       quoteAmount: z.string().regex(/^\d+$/).describe('the pending price, base units'),
@@ -250,7 +254,7 @@ export function registerHostedTools(server: McpServer, callV1: CallV1): void {
 
   server.tool(
     'accept_terms',
-    'Accept the current terms at the price you read (currentQuoteAmount from get_thread) — refused if it moved since. When BOTH sides accept, the HTLC swap is created. The initiator (funds the long leg) must pass hashlock = sha256(secret): generate a 32-byte secret yourself, keep it safe, and reveal it only when you claim. The server never sees your preimage.',
+    'Accept the current terms at the price you read (currentQuoteAmount from get_thread) — refused if it moved since. Needed only when your side\'s accepted flag (takerAccepted / makerAccepted) is false: your own quote, or a proposal you sent with your hashlock as the initiator, already counts. When BOTH sides have accepted, the HTLC swap is created. The initiator (funds the long leg) must pass hashlock = sha256(secret): generate a 32-byte secret yourself, keep it safe, and reveal it only when you claim. The server never sees your preimage.',
     {
       id: z.string().uuid(),
       quoteAmount: z.string().regex(/^\d+$/).describe('the current price, base units'),

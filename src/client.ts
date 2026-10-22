@@ -209,6 +209,10 @@ export class HashlockClient {
   private _solana: SolanaSigner | null = null;
   /** Who this process is, as the API last said. A re-login that answers differently is refused. */
   private userId: string | null = null;
+  /** This account's id once the API has said it (any login, or whoami); null before. */
+  get myId(): string | null {
+    return this.userId;
+  }
   private chainCfg: ChainConfig | null = null;
 
   private get hasKey(): boolean {
@@ -629,8 +633,9 @@ export class HashlockClient {
   getThread = (id: string) =>
     this.req<{ thread: Thread; rfq: Rfq; messages: Message[]; swap: Swap | null }>(`/threads/${id}`);
   postMessage = (id: string, body: string) => this.req(`/threads/${id}/messages`, { body: { body } });
-  propose = (id: string, quoteAmount: string) =>
-    this.req<{ thread: Thread }>(`/threads/${id}/propose`, { body: { quoteAmount } });
+  // Proposing is agreeing to the price: the initiator's hashlock rides along (the API keeps it only from the initiator).
+  propose = (id: string, quoteAmount: string, hashlock?: string) =>
+    this.req<{ thread: Thread }>(`/threads/${id}/propose`, { body: { quoteAmount, hashlock } });
   // Both accepts name the price (base units) — the server refuses if it moved since it was read.
   // With `accept`, taking their counter also accepts the deal at it, in one server transaction (the initiator's
   // hashlock rides along) — only the proposer's accept is then left.

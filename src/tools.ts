@@ -46,7 +46,9 @@ export function registerTools(server: McpServer, api: HashlockClient, secrets: S
       currentPrice: fromBaseUnits(t.currentQuoteAmount, dec),
       pendingPrice: fromBaseUnits(t.pendingAmount, dec),
       pendingBy: t.pendingBy,
-      youAcceptedNeeded: !(t.takerAccepted && t.makerAccepted),
+      // Whether THIS side has accepted the price on the table — a quote or a counter of ours already counts. Unknown
+      // until the API has told us who we are (whoami).
+      youAccepted: api.myId ? (api.myId === t.takerId ? t.takerAccepted : t.makerAccepted) : undefined,
       takerAccepted: t.takerAccepted,
       makerAccepted: t.makerAccepted,
       rfq: await describeRfq(r),
@@ -158,13 +160,31 @@ export function registerTools(server: McpServer, api: HashlockClient, secrets: S
 
   server.tool(
     'respond_to_rfq',
-    'Respond to an open RFQ with your price. Opens a private deal thread with the creator; returns the threadId for negotiate/deal_status. price = TOTAL quote-asset amount for the whole base amount (not per-unit).',
+    'Respond to an open RFQ with your price. Opens a private deal thread with the creator; returns the threadId for negotiate/deal_status. price = TOTAL quote-asset amount for the whole base amount (not per-unit). Your quote is your acceptance of that price (as the initiator, this tool accepts it for you with your hashlock): when the creator accepts it, the deal is agreed.',
     { rfq_id: z.string().uuid(), price: z.string().describe('Total quote-asset amount, human decimal') },
     wrapTool(async ({ rfq_id, price }) => {
       const { rfq } = await api.getRfq(rfq_id);
       const quote = await assetById(rfq.quoteAssetId);
-      const { thread } = await api.postQuote(rfq_id, toBaseUnits(price, quote?.decimals ?? 0));
-      return okContent(await describeThread(thread, rfq));
+      const base = toBaseUnits(price, quote?.decimals ?? 0);
+      const { thread } = await api.postQuote(rfq_id, base);
+      // The API records a quote as the maker's acceptance — except from the initiator, who agrees only with its hashlock,
+      // keyed by the thread the quote just created: accept for it now, with this thread's secret.
+      if (!thread.makerAccepted) {
+        const { hashlock } = secrets.generate(thread.id);
+        try {
+          return agreedOrWaiting(await api.accept(thread.id, base, hashlock));
+        } catch (e) {
+          // The quote stands; only the accept that makes it count did not land. Say so — left silent, the deal waits
+          // for an acceptance nobody is going to give.
+          return okContent({
+            ...(await describeThread(thread, rfq)),
+            agreed: false,
+            accept_failed: e instanceof Error ? e.message : String(e),
+            next_step: 'you are the initiator: your quote counts only once you accept it — call negotiate action=accept at currentPrice',
+          });
+        }
+      }
+      return okContent({ ...(await describeThread(thread, rfq)), agreed: false, waiting_for: 'the requester to accept your quote' });
     }),
   );
 
@@ -173,9 +193,9 @@ export function registerTools(server: McpServer, api: HashlockClient, secrets: S
     [
       'Act in a deal thread. Actions:',
       '- message: free-text chat (body required)',
-      '- propose: counter with a new TOTAL price (price required)',
-      '- accept_proposal: accept the price the counterparty proposed AND the deal at it, in one step (price required: the pendingPrice shown by deal_status or my_deals) — only the counterparty\'s accept is then left. As with accept, the initiator\'s secret is generated locally and only its hashlock is sent.',
-      '- accept: accept the final terms (price required: the currentPrice shown by deal_status or my_deals). BOTH parties must accept; when both have, the HTLC swap is created. If you are the initiator (fund the long leg), a swap secret is generated LOCALLY on this machine and only its sha256 hashlock is sent — retrieve it later with get_deal_secret.',
+      '- propose: counter with a new TOTAL price (price required). Proposing a price is agreeing to it: when the counterparty takes it, the deal is agreed.',
+      '- accept_proposal: take the price the counterparty proposed (price required: the pendingPrice shown by deal_status or my_deals) — they agreed to it by proposing, so this agrees the deal. As with accept, the initiator\'s secret is generated locally and only its hashlock is sent.',
+      '- accept: accept the price on the table (price required: the currentPrice shown by deal_status or my_deals) — needed only when youAccepted is false — your own quote or proposal normally already counts (except an initiator\'s on an older server). When both sides have accepted, the HTLC swap is created. If you are the initiator (fund the long leg), a swap secret is generated LOCALLY on this machine and only its sha256 hashlock is sent — retrieve it later with get_deal_secret.',
       '- reject: decline and close the deal',
       'Accepting names the price on purpose: if it changed since you read the deal, the accept is refused — read it again and decide.',
     ].join('\n'),
@@ -201,8 +221,10 @@ export function registerTools(server: McpServer, api: HashlockClient, secrets: S
         }
         case 'propose': {
           const { base, rfq } = await priceBase();
-          const { thread } = await api.propose(a.thread_id, base);
-          return okContent(await describeThread(thread, rfq));
+          // Proposing is agreeing: send this thread's hashlock — the API keeps it only when WE are the initiator.
+          const { hashlock } = secrets.generate(a.thread_id);
+          const { thread } = await api.propose(a.thread_id, base, hashlock);
+          return okContent({ ...(await describeThread(thread, rfq)), waiting_for: 'the counterparty to take your price — that agrees the deal' });
         }
         case 'accept_proposal': {
           const { base } = await priceBase();
