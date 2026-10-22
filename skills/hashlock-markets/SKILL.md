@@ -199,7 +199,8 @@ A token you launched or hold can trade here block-for-block once it is listed �
 2. Collect quotes: `list_rfq_threads` / `GET /v1/rfqs/{id}/threads` lists the thread each maker's quote
    opened. Poll it, or register a `quote.created` webhook if you have a public URL.
 3. Negotiate in a thread (`get_thread`): `propose_price` to counter, `accept_proposal` to take the other
-   side's pending price.
+   side's pending price. Pass `accept: true` (and, as the initiator, your hashlock) to accept the deal at
+   that price in the same step — then only the other side's `accept_terms` is left.
 4. Agree: `accept_terms` / `POST /v1/threads/{id}/accept` with the price you read and your hashlock (see
    §4). Both sides must accept; the second accept creates the swap.
 5. Changed your mind before agreeing? `cancel_rfq`.

@@ -53,6 +53,22 @@ export function registerTools(server: McpServer, api: HashlockClient, secrets: S
     };
   }
 
+  // An accept answers either "agreed" (both sides in: the swap exists) or "waiting for the other side".
+  async function agreedOrWaiting(res: { thread: Thread; swap?: { id: string } }) {
+    const described = await describeThread(res.thread);
+    return okContent(
+      res.swap
+        ? {
+            ...described,
+            agreed: true,
+            swapId: res.swap.id,
+            next_steps:
+              'Deal agreed. Call deal_status for settlement state; set receive/refund addresses with set_settlement_address; funding & claiming are signed with your own wallet (web app or your signer).',
+          }
+        : { ...described, agreed: false, waiting_for: 'the counterparty to accept as well' },
+    );
+  }
+
   // ── read-only (no auth needed) ──────────────────────────────────────────────
   server.tool(
     'list_assets',
@@ -158,7 +174,7 @@ export function registerTools(server: McpServer, api: HashlockClient, secrets: S
       'Act in a deal thread. Actions:',
       '- message: free-text chat (body required)',
       '- propose: counter with a new TOTAL price (price required)',
-      '- accept_proposal: accept the price the counterparty proposed (price required: the pendingPrice shown by deal_status or my_deals)',
+      '- accept_proposal: accept the price the counterparty proposed AND the deal at it, in one step (price required: the pendingPrice shown by deal_status or my_deals) — only the counterparty\'s accept is then left. As with accept, the initiator\'s secret is generated locally and only its hashlock is sent.',
       '- accept: accept the final terms (price required: the currentPrice shown by deal_status or my_deals). BOTH parties must accept; when both have, the HTLC swap is created. If you are the initiator (fund the long leg), a swap secret is generated LOCALLY on this machine and only its sha256 hashlock is sent — retrieve it later with get_deal_secret.',
       '- reject: decline and close the deal',
       'Accepting names the price on purpose: if it changed since you read the deal, the accept is refused — read it again and decide.',
@@ -189,26 +205,17 @@ export function registerTools(server: McpServer, api: HashlockClient, secrets: S
           return okContent(await describeThread(thread, rfq));
         }
         case 'accept_proposal': {
-          const { thread } = await api.acceptProposal(a.thread_id, (await priceBase()).base);
-          return okContent(await describeThread(thread));
+          const { base } = await priceBase();
+          // Taking the counter accepts the deal at it in the same server transaction; as with accept, always send a
+          // hashlock — the API stores it only when WE are the initiator (generate() is idempotent per thread).
+          const { hashlock } = secrets.generate(a.thread_id);
+          return agreedOrWaiting(await api.acceptProposal(a.thread_id, base, { accept: true, hashlock }));
         }
         case 'accept': {
           const { base } = await priceBase();
           // Always generate + send a hashlock: the API stores it only when WE are the initiator.
           const { hashlock } = secrets.generate(a.thread_id);
-          const res = await api.accept(a.thread_id, base, hashlock);
-          const described = await describeThread(res.thread);
-          return okContent(
-            res.swap
-              ? {
-                  ...described,
-                  agreed: true,
-                  swapId: res.swap.id,
-                  next_steps:
-                    'Deal agreed. Call deal_status for settlement state; set receive/refund addresses with set_settlement_address; funding & claiming are signed with your own wallet (web app or your signer).',
-                }
-              : { ...described, agreed: false, waiting_for: 'the counterparty to accept as well' },
-          );
+          return agreedOrWaiting(await api.accept(a.thread_id, base, hashlock));
         }
         case 'reject': {
           await api.reject(a.thread_id);

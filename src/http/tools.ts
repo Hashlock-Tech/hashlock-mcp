@@ -236,9 +236,16 @@ export function registerHostedTools(server: McpServer, callV1: CallV1): void {
 
   server.tool(
     'accept_proposal',
-    "Accept the counterparty's pending price on a thread. Pass the pendingAmount you read from get_thread: if a newer counter replaced it, this is refused — read again and decide.",
-    { id: z.string().uuid(), quoteAmount: z.string().regex(/^\d+$/).describe('the pending price, base units') },
-    async ({ id, quoteAmount }) => out(await callV1(`/threads/${id}/accept-proposal`, { method: 'POST', body: { quoteAmount } })),
+    "Accept the counterparty's pending price on a thread. Pass the pendingAmount you read from get_thread: if a newer counter replaced it, this is refused — read again and decide. With accept: true it also accepts the deal at that price in the same step (COMMITS, like accept_terms), so only the counterparty's accept is left; the initiator (funds the long leg) then passes hashlock = sha256(secret) here. Without accept, both sides accept afterwards with accept_terms.",
+    {
+      id: z.string().uuid(),
+      quoteAmount: z.string().regex(/^\d+$/).describe('the pending price, base units'),
+      accept: z.boolean().optional().describe('also accept the deal at this price (one step)'),
+      hashlock: z.string().optional().describe('32-byte hex sha256(secret); required from the initiator with accept: true'),
+    },
+    async ({ id, quoteAmount, accept, hashlock }) =>
+      // Sent as given: a hashlock without accept is refused by the server (400), never dropped here in silence.
+      out(await callV1(`/threads/${id}/accept-proposal`, { method: 'POST', body: { quoteAmount, accept, hashlock } })),
   );
 
   server.tool(

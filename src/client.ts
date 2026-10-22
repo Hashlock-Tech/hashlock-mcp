@@ -632,8 +632,20 @@ export class HashlockClient {
   propose = (id: string, quoteAmount: string) =>
     this.req<{ thread: Thread }>(`/threads/${id}/propose`, { body: { quoteAmount } });
   // Both accepts name the price (base units) — the server refuses if it moved since it was read.
-  acceptProposal = (id: string, quoteAmount: string) =>
-    this.req<{ thread: Thread }>(`/threads/${id}/accept-proposal`, { body: { quoteAmount } });
+  // With `accept`, taking their counter also accepts the deal at it, in one server transaction (the initiator's
+  // hashlock rides along) — only the proposer's accept is then left.
+  acceptProposal = async (id: string, quoteAmount: string, opts: { accept?: boolean; hashlock?: string } = {}) => {
+    if (opts.hashlock && !opts.accept) throw new Error('hashlock is only taken with accept: true');
+    if (!opts.accept) return this.req<{ thread: Thread; swap?: Swap }>(`/threads/${id}/accept-proposal`, { body: { quoteAmount } });
+    await this.ensureSolanaLinked();
+    const res = await this.withSolanaReason(() =>
+      this.req<{ thread: Thread; swap?: Swap }>(`/threads/${id}/accept-proposal`, { body: { quoteAmount, accept: true, hashlock: opts.hashlock } }),
+    );
+    // An API older than the one-step take ignores `accept`: it took the price and nobody has accepted. Accept it now —
+    // the same price, the same hashlock — so the result is the same either way.
+    if (!res.swap && !res.thread.takerAccepted && !res.thread.makerAccepted) return this.accept(id, quoteAmount, opts.hashlock);
+    return res;
+  };
   accept = async (id: string, quoteAmount: string, hashlock?: string) => {
     await this.ensureSolanaLinked();
     return this.withSolanaReason(() =>
