@@ -76,7 +76,8 @@ TAKER                          HASHLOCK                         MAKER
 create_rfq  ─────────────▶  sealed RFQ board  ◀───────────── list_open_rfqs
             ◀── list_rfq_threads ──  private thread  ◀────── quote_rfq
 propose_price / accept_proposal  ◀──── negotiation ────▶  propose_price / accept_proposal
-accept the OTHER side's price ─▶  swap created  ◀─ (a quote or a counter is its author's acceptance)
+accept_terms / accept_proposal(accept) ─▶  swap created  ◀─ (a quote or a counter is its author's acceptance;
+  on the OTHER side's price, + hashlock as initiator)                 an initiator maker adds accept_terms + hashlock)
 
                  ┌── initiator (holds the secret) funds the LONG leg first
 SETTLEMENT       ├── counterparty funds the SHORT leg
@@ -204,7 +205,7 @@ A token you launched or hold can trade here block-for-block once it is listed �
    deal in that step.
 4. Agree: `accept_terms` / `POST /v1/threads/{id}/accept` on a maker's quote, with the price you read and
    your hashlock (see §4). The quote is the maker's acceptance, so yours creates the swap. Accept only a
-   price the other side set — never your own.
+   price the other side set — never your own (the one exception is in §3b: an initiator maker's quote).
 5. Changed your mind before agreeing? `cancel_rfq`.
 
 ## 3b. Make markets — you are the maker
