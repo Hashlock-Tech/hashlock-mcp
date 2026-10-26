@@ -273,7 +273,10 @@ TRX figures are at today's energy price; when short, the TRON builder answers `4
    wei; an ERC-20 leg is `approve` then `createSwap`). Sign and send **each, in order, from the `from` it
    names** — the escrow refuses any other sender; `from` is your refund address on that leg. Then the
    counterparty funds its leg the same way; its builder answers `409` until the initiator's leg is recorded
-   (about a minute after it mines on Base) — wait and ask again.
+   (about a minute after it mines on Base) — wait and ask again. **Counterparty: before you fund, read the
+   initiator's escrow on chain yourself** — the swap's hashlock, your payout address as recipient, the agreed
+   asset and amount, a timelock at least 2 hours after your own leg's — and fund only if all match (an EVM
+   recipe is in `references/bankr.md`). The MCP server does this for you.
    **Funding closes 35 minutes before the earlier timelock** — fund promptly once you may; after that the
    builder refuses and the deal can only refund.
    **On TRON** (`sign: "tron-txid"`) you get `from` (your login TRON wallet, which signs) and `transactions`
@@ -348,6 +351,11 @@ again.
 - Accept only a price you computed yourself; every accept names the price you read, and is refused if it
   moved since.
 - Never claim before both legs are funded (the claim builder refuses anyway).
+- **Do not settle on the API's word alone.** Send transactions only to Hashlock's own contracts (keep their
+  addresses in your code), and before you fund second or reveal your secret, check the other side's escrow on
+  chain. The MCP server (`@hashlock-tech/mcp`) does both for you: it settles only into its own key or a payout
+  address it set itself, so a deal made before its current release, or one whose payout you set elsewhere, is
+  settled in the web app.
 - Watch timelocks (`aTimelock`, `bTimelock` on the swap): the initiator claims the short leg before it times
   out; the counterparty then claims the long leg in time (§5, step 4).
 - Hashlock's EVM escrow contracts were audited by QuillAudits, which also verified the fixes. Still size

@@ -134,7 +134,14 @@ const at = await pub.readContract({ address: FACTORIES[initiatorChainId], abi, f
 if (at.toLowerCase() !== clone.toLowerCase() || claimed || refunded || h.toLowerCase() !== swap.hashlock.toLowerCase()
   || rcpt.toLowerCase() !== BANKR_WALLET.toLowerCase() || BigInt(amt) < BigInt(initiatorLeg.amount)
   || Number(tl) < myLegTimelockUnix + 7200) throw new Error('the initiator escrow is not the agreed one — do not fund');
-// Also compare `tok` with the agreed asset's address (0x000…0 = the native coin) and the clone's balance with `amt`.
+// The agreed asset (0x000…0 = the native coin), and the escrow really holds the amount.
+// `initiatorLeg.amount` is in base units (wei / the token's smallest unit), as every swap amount is.
+const ZERO = '0x0000000000000000000000000000000000000000';
+const held = tok.toLowerCase() === ZERO ? await pub.getBalance({ address: clone })
+  : await pub.readContract({ address: tok, abi: parseAbi(['function balanceOf(address) view returns (uint256)']), functionName: 'balanceOf', args: [clone] });
+// AGREED_TOKEN: the contract address you matched the asset by when you agreed (ZERO for the native coin).
+if (tok.toLowerCase() !== AGREED_TOKEN.toLowerCase() || held < BigInt(amt))
+  throw new Error('the initiator escrow holds another asset or less than agreed — do not fund');
 ```
 
 ## Bankr errors you can hit
