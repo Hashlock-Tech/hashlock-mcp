@@ -78,6 +78,15 @@
           "description": "TronGrid API key (TronGrid throttles requests without one)",
           "isSecret": true,
           "name": "HASHLOCK_TRON_API_KEY"
+        },
+        {
+          "description": "Solana RPC the agent reads the counterparty's escrow through before funding",
+          "default": "https://api.mainnet-beta.solana.com",
+          "name": "HASHLOCK_SOLANA_RPC"
+        },
+        {
+          "description": "Esplora the agent reads the counterparty's Bitcoin escrow through (default: mempool.space for the network)",
+          "name": "HASHLOCK_BTC_ESPLORA"
         }
       ]
     }

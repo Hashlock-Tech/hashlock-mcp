@@ -11,15 +11,15 @@ describe('SecretStore', () => {
 
   it('generates a 32-byte hex secret whose sha256 is the hashlock (stack-wide convention)', () => {
     const store = new SecretStore(join(dir, 's.json'));
-    const { secret, hashlock } = store.generate('thread-1');
+    const { secret, hashlock } = store.generate('thread-1', 'r');
     expect(secret).toMatch(/^[0-9a-f]{64}$/); // bare hex, no 0x — matches web + API
     expect(hashlock).toBe(createHash('sha256').update(Buffer.from(secret, 'hex')).digest('hex'));
   });
 
   it('is idempotent per thread and persists across instances', () => {
     const path = join(dir, 's.json');
-    const a = new SecretStore(path).generate('t1');
-    const b = new SecretStore(path).generate('t1');
+    const a = new SecretStore(path).generate('t1', 'r');
+    const b = new SecretStore(path).generate('t1', 'r');
     expect(b.secret).toBe(a.secret);
     expect(new SecretStore(path).get('t1')?.hashlock).toBe(a.hashlock);
     expect(new SecretStore(path).get('missing')).toBeNull();
@@ -27,6 +27,6 @@ describe('SecretStore', () => {
 
   it('different threads get different secrets', () => {
     const store = new SecretStore(join(dir, 's.json'));
-    expect(store.generate('t1').secret).not.toBe(store.generate('t2').secret);
+    expect(store.generate('t1', 'r').secret).not.toBe(store.generate('t2', 'r').secret);
   });
 });

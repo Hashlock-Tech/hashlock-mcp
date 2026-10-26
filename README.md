@@ -97,7 +97,7 @@ server composes each one and the agent signs the bytes it is handed. Set the age
 
 With none set, read-only tools (`list_assets`, `list_open_rfqs`, `get_rfq`) still work. Use a dedicated key with only the funds you intend to trade.
 
-Required: `HASHLOCK_API_URL` — the API base, e.g. `https://hashlock.markets/api`; there is no default. Other env: `HASHLOCK_APP_URL` (share links; default derived), `HASHLOCK_EVM_RPC` (default a public Ethereum mainnet RPC; another EVM chain takes `HASHLOCK_EVM_RPC_<CHAIN>`, e.g. `HASHLOCK_EVM_RPC_BASE`), `HASHLOCK_TRON_HOST` (default TronGrid mainnet), `HASHLOCK_TRON_API_KEY` (a TronGrid API key — TronGrid throttles requests without one), `HASHLOCK_SECRETS_PATH` (default `~/.hashlock/mcp-secrets.json`, mode 0600).
+Required: `HASHLOCK_API_URL` — the API base, e.g. `https://hashlock.markets/api`; there is no default. Other env: `HASHLOCK_APP_URL` (share links; default derived), `HASHLOCK_EVM_RPC` (default a public Ethereum mainnet RPC; another EVM chain takes `HASHLOCK_EVM_RPC_<CHAIN>`, e.g. `HASHLOCK_EVM_RPC_BASE`), `HASHLOCK_TRON_HOST` (default TronGrid mainnet), `HASHLOCK_TRON_API_KEY` (a TronGrid API key — TronGrid throttles requests without one), `HASHLOCK_SOLANA_RPC` (default Solana mainnet-beta; devnet for a testnet API) and `HASHLOCK_BTC_ESPLORA` (default mempool.space for the API's Bitcoin network) — where the agent reads the counterparty's escrow itself, `HASHLOCK_SECRETS_PATH` (default `~/.hashlock/mcp-secrets.json`, mode 0600).
 
 ## Remote (hosted)
 
@@ -190,6 +190,14 @@ With a key set for each chain a swap touches, an agent can run end to end with n
 `create_rfq`/`respond_to_rfq` → `negotiate` (accept) → `set_settlement_address` (both chains) →
 `fund_leg` → `claim_leg`. Funding/claiming is signed locally with the agent's keys; the swap secret is
 generated + stored locally and only its hashlock leaves the machine. Use a dedicated key with only the funds you intend to trade.
+
+The agent never signs, funds or reveals a secret on the API's word alone:
+- **The deal as agreed.** A request the agent creates (taker) or quotes (maker) through this MCP is recorded locally with its side, assets and base amount, and per deal thread every price the agent agreed to (`mcp-secrets.agreements.json` beside the secrets file); each swap secret is bound to its request. `fund_leg`, `claim_leg` and `get_deal_secret` settle only a swap that matches — a deal agreed through another client is settled with your own wallet — with the fee capped at 30 bps of the taker's leg and no leg locked longer than 27 hours; an escrow already funded for the swap is never paid again.
+- **Pinned per network.** The HTLC factories, TRON pools, Solana programs, the Bitcoin fee treasury and the assets it settles in (the curated stablecoins and natives) are pinned in `src/pinned.ts` per network, and the network is the one the agent's own RPC answers for (EVM chain id, TRON and Solana genesis, the Bitcoin key's own network). A contract or asset Hashlock adds reaches agents through a new release.
+- **Escrows on chain.** Before the counterparty funds, and before the initiator's secret leaves the store in any way (`claim_leg`, `get_deal_secret`, `reveal_claim`), the escrow the agent is to be paid from is read through its own RPC: same hashlock, the agreed asset and amount, payable to the agent's own key or to an address it set itself with `set_settlement_address` (recorded locally once the API took it — never an address the API reports or lists), still open, Bitcoin coin as deep as the network requires — and, before funding, a timelock at least 2 hours past its own leg's. One escrow can back only one deal.
+- **What it signs.** The initiator funds only under the hashlock of the secret it holds for the deal; Bitcoin escrows are derived locally (the agent's key on the refund branch). Every Solana transaction the server builds is decoded and signed only if it is one HTLC call of the asked kind binding the agent, the checked escrow, the agreed mint and — on a fund — the agent's leg exactly.
+- **Not bound locally:** the counterparty's payout address on your own leg (only the API knows it).
+- **Deals agreed before this release**, or settlement addresses set outside this MCP, have no local record: settle those in the web app.
 
 ## How atomic settlement works
 

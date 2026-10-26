@@ -2,6 +2,7 @@ import { Signer as Bip322Signer } from 'bip322-js';
 import * as bitcoin from 'bitcoinjs-lib';
 import { ECPairFactory, type ECPairInterface } from 'ecpair';
 import * as ecc from 'tiny-secp256k1';
+import type { OnchainEscrow } from '../settlement.js';
 
 /**
  * Bitcoin signing + P2WSH HTLC settlement for the autonomous agent (bitcoinjs-lib, headless). The
@@ -31,7 +32,7 @@ interface Utxo {
   txid: string;
   vout: number;
   value: number;
-  status: { confirmed: boolean };
+  status: { confirmed: boolean; block_height?: number };
 }
 
 async function esploraUtxos(base: string, address: string): Promise<Utxo[]> {
@@ -39,11 +40,88 @@ async function esploraUtxos(base: string, address: string): Promise<Utxo[]> {
   if (!res.ok) throw new Error(`esplora utxo ${res.status}`);
   return (await res.json()) as Utxo[];
 }
+type Stats = { funded_txo_sum: number; spent_txo_sum: number };
+/** Esplora's GET /address: what was paid in and spent out, confirmed and in the mempool. */
+export async function esploraAddressStats(base: string, address: string): Promise<{ chain_stats: Stats; mempool_stats: Stats }> {
+  const res = await fetch(`${base.replace(/\/$/, '')}/address/${address}`);
+  if (!res.ok) throw new Error(`esplora address ${res.status}`);
+  return (await res.json()) as { chain_stats: Stats; mempool_stats: Stats };
+}
 async function esploraBroadcast(base: string, rawHex: string): Promise<string> {
   const res = await fetch(`${base.replace(/\/$/, '')}/tx`, { method: 'POST', body: rawHex });
   const text = await res.text();
   if (!res.ok) throw new Error(`broadcast failed: ${text.slice(0, 200)}`);
   return text.trim(); // txid
+}
+
+/**
+ * THE INITIATOR'S BITCOIN ESCROW, CHECKED HERE (tester 3.4). The API's redeem script must be byte for
+ * byte the HTLC the agreed terms produce — the API's own buildHTLCScript layout, with this agent's key on
+ * the claim branch — and its P2WSH must be the address the API names; then what counts is the coin the
+ * chain shows confirmed there, read through `esplora` (local, not the API's). The sender key on the
+ * refund branch is taken from the script: it decides only who may refund.
+ */
+export async function readBtcEscrow(
+  esplora: string,
+  network: string,
+  p: { htlcAddress: string; redeemScript: string; hashlockHex: string; receivers: string[]; timelockUnix: number; confirmations: number },
+): Promise<OnchainEscrow> {
+  const redeem = Buffer.from(p.redeemScript.replace(/^0x/i, ''), 'hex');
+  const sender = redeem.subarray(redeem.length - 35, redeem.length - 2);
+  // The script must be the agreed HTLC with one of the agent's keys on its claim branch.
+  const receiver = p.receivers.find((r) => {
+    try {
+      return htlcScript(p.hashlockHex, r, sender, p.timelockUnix).equals(redeem);
+    } catch {
+      return false; // not a key at all
+    }
+  });
+  if (!receiver) {
+    throw new Error(
+      "the API's redeem script is not the HTLC these terms produce, paying your key or an address you set with set_settlement_address — a deal agreed before this release, or an address set elsewhere, is settled in the web app",
+    );
+  }
+  const n = net(network);
+  const address = bitcoin.payments.p2wsh({ redeem: { output: redeem, network: n }, network: n }).address;
+  if (address !== p.htlcAddress) throw new Error(`the redeem script hashes to ${address}, not the escrow address ${p.htlcAddress} the API named`);
+  const base = esplora.replace(/\/$/, '');
+  const { chain_stats: c, mempool_stats: m } = await esploraAddressStats(base, address);
+  const spent = c.spent_txo_sum + m.spent_txo_sum > 0; // claimed or refunded (or being)
+  // Only coin buried `confirmations` deep counts — the API's own depth for the network: a shallower one
+  // can be reorged or double-spent away after the agent has funded against it.
+  const tipRes = await fetch(`${base}/blocks/tip/height`);
+  if (!tipRes.ok) throw new Error(`esplora tip ${tipRes.status}`);
+  const tip = Number(await tipRes.text());
+  const utxos = await esploraUtxos(base, address);
+  const deep = utxos
+    .filter((u) => u.status.confirmed && u.status.block_height !== undefined && tip - u.status.block_height + 1 >= p.confirmations)
+    .reduce((a, u) => a + BigInt(u.value), 0n);
+  const all = utxos.reduce((a, u) => a + BigInt(u.value), 0n);
+  if (!spent && deep < all) {
+    throw new Error(`the Bitcoin escrow ${address} has coin with fewer than ${p.confirmations} confirmation(s) — wait and call again`);
+  }
+  return {
+    hashlock: p.hashlockHex.toLowerCase(),
+    recipient: receiver,
+    token: null,
+    amount: deep,
+    timelock: p.timelockUnix,
+    open: !spent,
+  };
+}
+
+/** The API's buildHTLCScript (task #62 layout, with the 32-byte preimage size check). */
+export function htlcScript(hashlockHex: string, receiverPubkeyHex: string, sender: Buffer, timelockUnix: number): Buffer {
+  const o = bitcoin.opcodes;
+  return bitcoin.script.compile([
+    o.OP_IF, o.OP_SIZE, Buffer.from([32]), o.OP_EQUALVERIFY,
+    o.OP_SHA256, Buffer.from(hashlockHex.replace(/^0x/i, ''), 'hex'), o.OP_EQUALVERIFY,
+    Buffer.from(receiverPubkeyHex, 'hex'), o.OP_CHECKSIG,
+    o.OP_ELSE,
+    bitcoin.script.number.encode(timelockUnix), o.OP_CHECKLOCKTIMEVERIFY, o.OP_DROP,
+    sender, o.OP_CHECKSIG,
+    o.OP_ENDIF,
+  ]);
 }
 
 export interface BtcChain {
@@ -135,7 +213,7 @@ export class BtcSigner {
         throw new Error(`refusing to sign: input ${i} spends something other than ${p.spends}`);
       }
       const mine = tx.hashForWitnessV0(i, witnessScript, utxo.value, bitcoin.Transaction.SIGHASH_ALL);
-      const said = Buffer.from(p.sighashHexes[i]!.replace(/^0x/, ''), 'hex');
+      const said = Buffer.from(p.sighashHexes[i]!.replace(/^0x/i, ''), 'hex');
       if (!mine.equals(said)) {
         throw new Error(`refusing to sign: the API's sighash for input ${i} is not the one this transaction produces`);
       }
@@ -197,7 +275,7 @@ export class BtcSigner {
   ): Promise<string> {
     const n = net(chain.network);
     const redeem = Buffer.from(p.redeemHex, 'hex');
-    const preimage = Buffer.from(p.preimageHex.replace(/^0x/, ''), 'hex');
+    const preimage = Buffer.from(p.preimageHex.replace(/^0x/i, ''), 'hex');
     const fee = p.feeSats ?? 600;
     const to = p.toAddress ?? this.address;
 

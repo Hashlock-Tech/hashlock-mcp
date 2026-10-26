@@ -4,7 +4,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { HashlockClient } from './client.js';
 import { loadConfig } from './config.js';
-import { SecretStore } from './secrets.js';
+import { AgreementStore, SecretStore } from './secrets.js';
 import { registerTools } from './tools.js';
 
 /**
@@ -22,7 +22,7 @@ const secrets = new SecretStore(cfg.secretsPath);
 
 const { version } = createRequire(import.meta.url)('../package.json') as { version: string }; // ships in the npm tarball
 const server = new McpServer({ name: 'hashlock', version });
-registerTools(server, api, secrets);
+registerTools(server, api, secrets, AgreementStore.besides(cfg.secretsPath));
 
 const transport = new StdioServerTransport();
 await server.connect(transport);

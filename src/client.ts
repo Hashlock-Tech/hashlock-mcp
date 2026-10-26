@@ -287,10 +287,15 @@ export class HashlockClient {
     if (!pool) throw new Error('TRON settlement not configured on this API');
     return { fullHost: this.cfg.tronHost, apiKey: this.cfg.tronApiKey, sharedHtlc: cc.tron.sharedHtlc, pool };
   }
-  async btcChain(): Promise<BtcChain> {
-    const cc = await this.chainConfig();
-    if (!cc.btc.esplora) throw new Error('BTC settlement not configured on this API');
-    return { network: cc.btc.network, esplora: cc.btc.esplora, treasury: cc.btc.treasury };
+  /**
+   * Where this process READS escrows it is about to rely on (tester 3.4) — local config, never /config:
+   * an API that names the chain to check its own claims against is still marking its own homework.
+   */
+  get solanaRpc(): string {
+    return this.cfg.solanaRpc;
+  }
+  btcEsplora(network: string): string {
+    return this.cfg.btcEsplora ?? (network === 'mainnet' ? 'https://mempool.space/api' : 'https://mempool.space/signet/api');
   }
 
   /**

@@ -1,4 +1,6 @@
 import { TronWeb } from 'tronweb';
+import { encodePacked, keccak256 } from 'viem';
+import type { OnchainEscrow } from '../settlement.js';
 
 /**
  * TRON signing + SharedHTLC settlement for the autonomous agent (TronWeb, headless). The agent's
@@ -41,6 +43,22 @@ const sharedAbi = [
     inputs: [{ name: 'swapId', type: 'bytes32' }],
     outputs: [],
   },
+  {
+    type: 'function',
+    name: 'swaps',
+    stateMutability: 'view',
+    inputs: [{ name: '', type: 'bytes32' }],
+    outputs: [
+      { name: 'initiator', type: 'address' },
+      { name: 'recipient', type: 'address' },
+      { name: 'token', type: 'address' },
+      { name: 'amount', type: 'uint256' },
+      { name: 'hashlock', type: 'bytes32' },
+      { name: 'timelock', type: 'uint256' },
+      { name: 'claimed', type: 'bool' },
+      { name: 'refunded', type: 'bool' },
+    ],
+  },
 ] as const;
 const erc20Abi = [
   {
@@ -80,7 +98,7 @@ export class TronSigner {
   readonly address: string;
   private readonly key: string;
   constructor(privateKeyHex: string) {
-    this.key = privateKeyHex.replace(/^0x/, '');
+    this.key = privateKeyHex.replace(/^0x/i, '');
     this.address = TronWeb.address.fromPrivateKey(this.key) as string;
   }
 
@@ -133,6 +151,41 @@ export class TronSigner {
     const tw = this.tw(chain);
     const shared = tw.contract(sharedAbi as unknown as never[], pool);
     return shared.refund(hex32(onchainSwapId)).send({ feeLimit: FEE_LIMIT });
+  }
+
+  /**
+   * A pool slot as the chain holds it (tester 3.4) — the caller has already checked `pool` is pinned. The
+   * slot must be the one THIS swap's funding derives — slotOf(agreed id, funder, token, fee) — so one
+   * escrow cannot be passed off as the initiator's leg of two swaps sharing a hashlock.
+   */
+  async readSlot(chain: TronChain, pool: string, onchainSwapId: string, swapUuid: string, fee: bigint): Promise<OnchainEscrow> {
+    const shared = this.tw(chain).contract(sharedAbi as unknown as never[], pool);
+    const r = (await shared.swaps(hex32(onchainSwapId)).call()) as Record<string, unknown>;
+    if (BigInt(String(r.amount)) === 0n) throw new Error(`no escrow at slot ${onchainSwapId} of ${pool}`);
+    const evm = (a: unknown) => `0x${TronWeb.address.toHex(TronWeb.address.fromHex(String(a))).slice(2)}` as `0x${string}`;
+    const slot = keccak256(
+      encodePacked(['bytes32', 'address', 'address', 'uint256'], [swapIdFromUuid(swapUuid) as `0x${string}`, evm(r.initiator), evm(r.token), fee]),
+    );
+    if (slot !== hex32(onchainSwapId)) throw new Error(`slot ${onchainSwapId} is not this swap's escrow`);
+    const token = TronWeb.address.fromHex(String(r.token));
+    return {
+      hashlock: String(r.hashlock).replace(/^0x/i, '').toLowerCase(),
+      recipient: TronWeb.address.fromHex(String(r.recipient)),
+      token: token === TRON_NATIVE_TOKEN ? null : token,
+      amount: BigInt(String(r.amount)),
+      timelock: Number(String(r.timelock)),
+      open: !r.claimed && !r.refunded,
+    };
+  }
+
+  /** Whether this agent's slot for the swap — slotOf(agreed id, this key, token, fee) — already holds an escrow. */
+  async fundedSlot(chain: TronChain, pool: string, swapUuid: string, token: string | null, fee: bigint): Promise<boolean> {
+    const evm = (a: string) => `0x${TronWeb.address.toHex(a).slice(2)}` as `0x${string}`;
+    const slot = keccak256(
+      encodePacked(['bytes32', 'address', 'address', 'uint256'], [swapIdFromUuid(swapUuid) as `0x${string}`, evm(this.address), evm(token ?? TRON_NATIVE_TOKEN), fee]),
+    );
+    const r = (await this.tw(chain).contract(sharedAbi as unknown as never[], pool).swaps(slot).call()) as Record<string, unknown>;
+    return BigInt(String(r.amount)) > 0n;
   }
 
   /** Claim to the recipient fixed at funding. `pool`: as for refund. */
