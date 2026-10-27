@@ -288,7 +288,7 @@ export function registerHostedTools(server: McpServer, callV1: CallV1): void {
       'hex preimage. This call sends the secret to Hashlock\'s server, even when it is refused (legs not both ' +
       'funded yet), so call it only when you are about to sign and send the claim. EVM returns txs to sign and ' +
       'send; TRON returns a transaction whose txID you sign; Solana returns sign="solana-tx" with ' +
-      'transactionBase64 to sign and broadcast; ' +
+      'transactionBase64 — only the leg\'s payout key can sign it (it is also the fee payer), then broadcast it; ' +
       'Bitcoin returns sign="btc-sighash" with sighashHexes — one per escrow input: sign EACH with secp256k1 ' +
       'and pass them back through broadcast_tx as { psbtBase64, signaturesHex: [...], preimageHex }, and the ' +
       'witness is assembled for you.',
@@ -299,7 +299,8 @@ export function registerHostedTools(server: McpServer, callV1: CallV1): void {
   server.tool(
     'build_refund',
     'Build the UNSIGNED refund for a leg (available after its timelock expires). Same signing shapes as ' +
-      'build_claim; for Bitcoin, omit preimageHex when broadcasting so the refund branch is taken.',
+      'build_claim, except that on Solana only the leg\'s refund (funder) key can sign; for Bitcoin, omit ' +
+      'preimageHex when broadcasting so the refund branch is taken.',
     { id: z.string().uuid(), leg: z.enum(['a', 'b']) },
     async ({ id, leg }) => out(await callV1(`/swaps/${id}/legs/${leg}/refund`, { method: 'POST' })),
   );
