@@ -285,7 +285,10 @@ export function registerHostedTools(server: McpServer, callV1: CallV1): void {
   server.tool(
     'build_claim',
     'Build the UNSIGNED claim (reveals the secret on-chain). Requires both legs funded. secret = 32-byte ' +
-      'hex preimage. EVM returns txs to sign and send; TRON returns a transaction whose txID you sign; ' +
+      'hex preimage. This call sends the secret to Hashlock\'s server, even when it is refused (legs not both ' +
+      'funded yet), so call it only when you are about to sign and send the claim. EVM returns txs to sign and ' +
+      'send; TRON returns a transaction whose txID you sign; Solana returns sign="solana-tx" with ' +
+      'transactionBase64 to sign and broadcast; ' +
       'Bitcoin returns sign="btc-sighash" with sighashHexes — one per escrow input: sign EACH with secp256k1 ' +
       'and pass them back through broadcast_tx as { psbtBase64, signaturesHex: [...], preimageHex }, and the ' +
       'witness is assembled for you.',
