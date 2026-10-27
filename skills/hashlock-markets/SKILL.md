@@ -293,7 +293,7 @@ TRX figures are at today's energy price; when short, the TRON builder answers `4
      two — the counterparty funds only after your payment is recorded, and funding closes 35 minutes before
      that timelock.
    - Call `build_fund` again only once the payment has **one confirmation** (Hashlock reads its own explorer,
-     which can lag the mempool), with a new `Idempotency-Key` or none:
+     which can lag the mempool) — every call builds afresh:
      - `409` "already funded" → done, pay nothing more.
      - `topUp: true` → pay exactly that remaining `amountSats` to `payTo`, nothing else, and check again
        after its confirmation.
@@ -378,8 +378,8 @@ again.
   (only `409`, `429`, `503` and `504` are not kept), and a server restart can drop it — so it does not replace
   the check above. Reuse a key to resend an identical request, including after a `409` "still processing" —
   but if a resend comes back with `Idempotency-Replayed: true` and an error, that error is stored: switch
-  keys; after any other error answer, and for every new build (a claim that was "not yet", a rebuilt
-  transaction, a Bitcoin fund re-check), use a new key or none.
+  keys; after any other error answer, use a new key or none. The fund/claim/refund builders are never kept:
+  each call builds afresh, so a key there changes nothing.
 - **`409` is a state, not a failure**: "still processing" means wait and resend; anything else ("not enough
   TRX", "already funded", "would fail") tells you what to do — read it, do not just resend.
 - Errors come back as `{ "error": "<message>" }` with the HTTP status (the hosted MCP passes them through
