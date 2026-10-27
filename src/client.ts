@@ -59,7 +59,8 @@ export interface Asset {
 }
 export interface Rfq {
   id: string;
-  creatorId: string;
+  /** Present only on your own requests; the server hides who posted anyone else's. */
+  creatorId?: string;
   direction: 'sell_base' | 'buy_base';
   baseAssetId: string;
   baseAmount: string;
