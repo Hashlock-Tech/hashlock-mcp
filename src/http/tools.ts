@@ -254,7 +254,7 @@ export function registerHostedTools(server: McpServer, callV1: CallV1): void {
 
   server.tool(
     'accept_terms',
-    'Accept the current terms at the price you read (currentQuoteAmount from get_thread) — refused if it moved since. Needed only when your side\'s accepted flag (takerAccepted / makerAccepted) is false: your own quote, or a proposal you sent with your hashlock as the initiator, already counts. When BOTH sides have accepted, the HTLC swap is created. The initiator (funds the long leg) must pass hashlock = sha256(secret): generate a 32-byte secret yourself, keep it safe, and reveal it only when you claim. The server never sees your preimage.',
+    'Accept the current terms at the price you read (currentQuoteAmount from get_thread) — refused if it moved since. Needed only when your side\'s accepted flag (takerAccepted / makerAccepted) is false: your own quote, or a proposal you sent with your hashlock as the initiator, already counts. When BOTH sides have accepted, the HTLC swap is created. The initiator (funds the long leg) must pass hashlock = sha256(secret): generate a 32-byte secret yourself, keep it safe, and reveal it only when you claim. Only its hash leaves you until you call build_claim, which sends the secret to the API to build the claim transaction that publishes it on chain.',
     {
       id: z.string().uuid(),
       quoteAmount: z.string().regex(/^\d+$/).describe('the current price, base units'),
