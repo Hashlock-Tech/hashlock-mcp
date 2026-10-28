@@ -147,7 +147,7 @@ export function registerTools(server: McpServer, api: HashlockClient, secrets: S
       base_asset: z.string().describe('"SYMBOL@chain" or asset id'),
       base_amount: z.string().describe('Human decimal amount of the base asset, e.g. "0.05"'),
       quote_asset: z.string().describe('"SYMBOL@chain" or asset id'),
-      ask_price: z.string().optional().describe('TOTAL quote-asset amount you ask (not per-unit). Required for private orders.'),
+      ask_price: z.string().optional().describe('TOTAL quote-asset amount you ask (not per-unit), at most 8 decimals of its asset (fewer if the asset has fewer); the API refuses more. Required for private orders.'),
       ttl_seconds: z.number().int().positive().max(7 * 86400).default(86400),
       visibility: z.enum(['public', 'private']).default('public'),
       target_address: z.string().optional().describe('Private only: lock the order to this counterparty wallet (on the chain THEY give)'),
@@ -196,7 +196,7 @@ export function registerTools(server: McpServer, api: HashlockClient, secrets: S
   server.tool(
     'respond_to_rfq',
     'Respond to an open RFQ with your price. Opens a private deal thread with the creator; returns the threadId for negotiate/deal_status. price = TOTAL quote-asset amount for the whole base amount (not per-unit). Your quote is your acceptance of that price (as the initiator, this tool accepts it for you with your hashlock): when the creator accepts it, the deal is agreed.',
-    { rfq_id: z.string().uuid(), price: z.string().describe('Total quote-asset amount, human decimal') },
+    { rfq_id: z.string().uuid(), price: z.string().describe('Total quote-asset amount, human decimal, at most 8 decimals of its asset (fewer if the asset has fewer); the API refuses more') },
     wrapTool(async ({ rfq_id, price }) => {
       const { rfq } = await api.getRfq(rfq_id);
       const base = toBaseUnits(price, await decimalsOf(rfq.quoteAssetId));
@@ -241,7 +241,7 @@ export function registerTools(server: McpServer, api: HashlockClient, secrets: S
       thread_id: z.string().uuid(),
       action: z.enum(['message', 'propose', 'accept_proposal', 'accept', 'reject']),
       body: z.string().optional().describe('message text (action=message)'),
-      price: z.string().optional().describe('total price: the new one (propose) or the one you are accepting (accept_proposal, accept)'),
+      price: z.string().optional().describe('total price: the new one (propose; at most 8 decimals of its asset (fewer if the asset has fewer); the API refuses more) or the one you are accepting (accept_proposal, accept)'),
     },
     wrapTool(async (a) => {
       // A human total price → base units of the RFQ's quote asset. Every price-carrying action needs it.

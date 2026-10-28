@@ -206,7 +206,7 @@ export function registerHostedTools(server: McpServer, callV1: CallV1): void {
       quoteAssetId: z.string(),
       ttlSeconds: z.number().int().positive(),
       visibility: z.enum(['public', 'private']).optional(),
-      askAmount: z.string().regex(/^\d+$/).optional(),
+      askAmount: z.string().regex(/^\d+$/).optional().describe(`a private order's total price, base units — at most 8 decimals of its asset (fewer if the asset has fewer); the API refuses more`),
       targetAddress: z.string().optional(),
     },
     async (body) => out(await callV1('/rfqs', { method: 'POST', body })),
@@ -223,7 +223,7 @@ export function registerHostedTools(server: McpServer, callV1: CallV1): void {
   server.tool(
     'quote_rfq',
     'Quote an open RFQ (scope: maker) — opens a settlement thread. quoteAmount = total quote-asset amount in base units. Your quote is your acceptance: when the requester accepts, the deal is agreed. Only if the returned thread shows makerAccepted: false (you are the initiator) call accept_terms on it right away with your hashlock.',
-    { id: z.string().uuid(), quoteAmount: z.string().regex(/^\d+$/) },
+    { id: z.string().uuid(), quoteAmount: z.string().regex(/^\d+$/).describe('total price, base units — at most 8 decimals of its asset (fewer if the asset has fewer); the API refuses more') },
     async ({ id, quoteAmount }) => out(await callV1(`/rfqs/${id}/quotes`, { method: 'POST', body: { quoteAmount } })),
   );
 
@@ -232,7 +232,7 @@ export function registerHostedTools(server: McpServer, callV1: CallV1): void {
     'Counter with a new total price on a thread (base units). Proposing is agreeing to it: when the counterparty takes it with accept_proposal(accept: true), the deal is agreed. The initiator (funds the long leg) agrees only with its hashlock = sha256(secret), so pass it here.',
     {
       id: z.string().uuid(),
-      quoteAmount: z.string().regex(/^\d+$/),
+      quoteAmount: z.string().regex(/^\d+$/).describe('the new total price, base units — at most 8 decimals of its asset (fewer if the asset has fewer); the API refuses more'),
       hashlock: z.string().optional().describe("32-byte hex sha256(secret) — the initiator's; ignored from the other side"),
     },
     async ({ id, quoteAmount, hashlock }) => out(await callV1(`/threads/${id}/propose`, { method: 'POST', body: { quoteAmount, hashlock } })),
