@@ -11,7 +11,8 @@ import { HTLC_INSTRUCTIONS, SolanaSigner, base58Decode, base58Encode, decodeSola
 import type { HashlockClient, Swap } from '../client.js';
 import { BITCOIN, EVM, TRON, pinnedAsset } from '../pinned.js';
 import { AgreementStore, SecretStore, type Agreement, type AssetSnapshot } from '../secrets.js';
-import { claimMyLeg, escrowProblem, fundMyLeg, MIN_TIMELOCK_GAP_SECONDS, releaseOwnSecret, type OnchainEscrow } from '../settlement.js';
+import { claimMyLeg, escrowProblem, fundMyLeg, MIN_TIMELOCK_GAP_SECONDS, refundMyLeg, releaseOwnSecret, type OnchainEscrow } from '../settlement.js';
+import { serverBuild } from './btc-build.js';
 import { assertPinned, checkDeal, evmNet, pinnedToken, solanaNet, tronNet } from '../trust.js';
 
 /**
@@ -587,6 +588,58 @@ describe('the secret leaves only through releaseOwnSecret', () => {
     expect(claim).toHaveBeenCalledWith(expect.anything(), swap.bHtlcAddress, S);
     expect(secrets.markRevealed).not.toHaveBeenCalled();
     await expect(claimMyLeg(api, { ...swap, secretCiphertext: '44'.repeat(32) } as Swap, secrets, store())).rejects.toThrow(/does not open/);
+  });
+
+  it("claims a Bitcoin leg by signing the server's claim build, after reproducing its sighash", async () => {
+    const n = bitcoin.networks.testnet;
+    const script = htlcScript(SH, btcSigner.pubkeyHex, SENDER, now() + 3600);
+    const htlc = bitcoin.payments.p2wsh({ redeem: { output: script, network: n }, network: n });
+    const build = (to: string) => serverBuild({ witnessScript: script, network: n, to });
+    let built = build(btcSigner.address);
+    const buildLeg = vi.fn(async () => built);
+    const broadcastSigned = vi.fn(async () => ({ txid: 'btcclaim' }));
+    const api = {
+      ...meApi,
+      familyOf: async (c: string) => (c === 'bitcoin' ? 'btc' : 'evm'),
+      btcSigner: async () => btcSigner,
+      btcEsplora: () => 'https://esplora',
+      buildLeg,
+      broadcastSigned,
+      reveal: async () => ({}),
+    } as unknown as HashlockClient;
+    const swap = dealSwap({ makerId: 'me', takerId: 't', initiatorUserId: 't', hashlock: SH, secretCiphertext: S, bChain: 'bitcoin', bClaimTx: null, bHtlcAddress: htlc.address });
+    const secrets = { findByHashlock: () => null, markRevealed: vi.fn() };
+    await expect(claimMyLeg(api, swap, secrets, store())).resolves.toMatchObject({ tx: 'btcclaim', leg: 'b' });
+    expect(buildLeg).toHaveBeenCalledWith(SWAP_ID, 'b', 'claim', { secret: S });
+    expect(broadcastSigned).toHaveBeenCalledWith('bitcoin', { psbtBase64: built.psbtBase64, signaturesHex: [expect.stringMatching(/^[0-9a-f]{128}$/)], preimageHex: S });
+    // A build that pays anyone else is not signed, and nothing is broadcast.
+    broadcastSigned.mockClear();
+    built = build('tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx');
+    await expect(claimMyLeg(api, swap, secrets, store())).rejects.toThrow(/does not pay/);
+    expect(broadcastSigned).not.toHaveBeenCalled();
+  });
+
+  it("refunds a Bitcoin leg by signing the server's refund build, broadcast with no preimage", async () => {
+    const n = bitcoin.networks.testnet;
+    const script = htlcScript(SH, SENDER.toString('hex'), Buffer.from(btcSigner.pubkeyHex, 'hex'), now() - 60);
+    const built = serverBuild({ witnessScript: script, network: n, to: btcSigner.address });
+    const buildLeg = vi.fn(async () => built);
+    const broadcastSigned = vi.fn(async () => ({ txid: 'btcrefund' }));
+    const api = {
+      ...meApi,
+      familyOf: async (c: string) => (c === 'bitcoin' ? 'btc' : 'evm'),
+      btcSigner: async () => btcSigner,
+      btcEsplora: () => 'https://esplora',
+      buildLeg,
+      broadcastSigned,
+    } as unknown as HashlockClient;
+    // The agent is the taker, so its funded leg is b — Bitcoin, past its timelock, never claimed.
+    const swap = dealSwap({ bHtlcAddress: p2wsh(script), bFundTx: 'f', bClaimTx: null, bTimelock: new Date((now() - 60) * 1000).toISOString() });
+    await expect(refundMyLeg(api, swap)).resolves.toMatchObject({ tx: 'btcrefund', leg: 'b' });
+    expect(buildLeg).toHaveBeenCalledWith(SWAP_ID, 'b', 'refund', {});
+    expect(broadcastSigned).toHaveBeenCalledWith('bitcoin', { psbtBase64: built.psbtBase64, signaturesHex: [expect.stringMatching(/^[0-9a-f]{128}$/)] });
+    // Its absence is what selects the refund branch in the server's finalizer.
+    expect(broadcastSigned.mock.calls[0]![1]).not.toHaveProperty('preimageHex');
   });
 
   it('checks the deal and the counterparty escrow before releasing its own secret, whatever the API says about roles', async () => {

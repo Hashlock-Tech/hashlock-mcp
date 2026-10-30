@@ -23,8 +23,9 @@ export function familyOf(chain: string): Family {
 }
 
 /**
- * A Solana leg, settled by SIGNING WHAT THE SERVER BUILT. The other three families assemble their own
- * transaction here, because each is a call this package can express in a few lines. Solana is not: its
+ * A Solana leg, settled by SIGNING WHAT THE SERVER BUILT. EVM, TRON and a Bitcoin funding assemble their
+ * own transaction here, because each is a call this package can express in a few lines (a Bitcoin claim
+ * or refund is signed from a server build too: settleBtcLeg). Solana is not: its
  * escrow ADDRESS is a hash of the agreed terms, so composing an instruction means carrying the
  * program's IDL, a Borsh coder and the exact byte layout of that hash. The server answers with the
  * transaction; the agent decodes it and signs only if every account and argument that decides whose money
@@ -459,12 +460,8 @@ export async function claimMyLeg(
     const recipients = agreements.addressesFor(swap.id, view.chain, view.leg);
     tx = await settleSolanaLeg(api, swap.id, view.leg, { secret: secretHex }, { programs: rail.all, action: 'claim', escrow: view.htlcAddress, recipients });
   } else {
-    if (!view.htlcAddress || !view.redeemScript) throw new Error('BTC HTLC/redeem script unknown (leg not funded yet)');
-    const n = await btcNet(api);
-    tx = await (await api.btcSigner()).claim(
-      { network: n.network, esplora: n.esplora },
-      { p2wsh: view.htlcAddress, redeemHex: view.redeemScript, preimageHex: secretHex },
-    );
+    if (!view.htlcAddress) throw new Error('BTC HTLC address unknown (leg not funded yet)');
+    tx = await settleBtcLeg(api, swap.id, view.leg, view.htlcAddress, { action: 'claim', secretHex });
   }
 
   // Tell the API so the counterparty/keeper can settle the other leg (best-effort; watchers also see it).
@@ -510,25 +507,36 @@ export async function refundMyLeg(api: HashlockClient, swap: Swap): Promise<{ tx
     const tx = await settleSolanaLeg(api, swap.id, view.leg, {}, { programs: rail.all, action: 'refund', escrow: view.htlcAddress });
     return { tx, leg: view.leg, chain: view.chain };
   }
-  const built = await api.buildLeg<BtcLegTx>(swap.id, view.leg, 'refund');
-  if (!built.psbtBase64 || !built.sighashHexes?.length) throw new Error('the API did not return a Bitcoin spend to sign');
   if (!view.htlcAddress) throw new Error('BTC HTLC address unknown (leg not funded yet)');
-  if (!view.refund) throw new Error('no refund address on this leg — there is nowhere to send the coins back to');
-  const signer = await api.btcSigner();
-  // WHERE THE COINS MAY GO — the agent's own address and nowhere else. The API pays the refund branch
-  // to the key it reads out of the REDEEM SCRIPT, and a refund this key can sign at all is one whose
-  // script names this key: any other destination is either a build we could not sign or a server
-  // proposing somewhere new. The row's own refund value adds nothing here and would only widen that.
-  const signaturesHex = signer.signServerSpend({
-    psbtBase64: built.psbtBase64,
-    sighashHexes: built.sighashHexes,
-    spends: view.htlcAddress,
-    paysTo: [signer.address],
-    network: (await btcNet(api)).network,
-  });
-  // NO preimageHex: its absence is what selects the refund branch in the server's finalizer.
-  const { txid } = await api.broadcastSigned('bitcoin', { psbtBase64: built.psbtBase64, signaturesHex });
-  return { tx: txid, leg: view.leg, chain: view.chain };
+  const tx = await settleBtcLeg(api, swap.id, view.leg, view.htlcAddress, { action: 'refund' });
+  return { tx, leg: view.leg, chain: view.chain };
+}
+
+/**
+ * A Bitcoin leg, claimed or refunded by SIGNING WHAT THE SERVER BUILT, as on Solana. The server spends the
+ * outputs its watcher recorded when the leg was funded, each checked on chain, so a dust flood that makes
+ * the explorer refuse the address listing cannot stop the spend (QuillAudits r3 #7). A claim carries the
+ * preimage, which selects the claim branch in the server's finalizer; a refund carries none.
+ *
+ * WHERE THE COINS MAY GO — the agent's own address and nowhere else. The API pays either branch to the key
+ * it reads out of the REDEEM SCRIPT, and a spend this key can sign at all is one whose script names this
+ * key: any other destination is either a build we could not sign or a server proposing somewhere new. The
+ * row's own payout or refund value adds nothing here and would only widen that.
+ */
+async function settleBtcLeg(
+  api: HashlockClient,
+  swapId: string,
+  leg: Leg,
+  htlc: string,
+  spend: { action: 'claim'; secretHex: string } | { action: 'refund' },
+): Promise<string> {
+  // The key and its network first: an agent with no Bitcoin key fails here, not after a server build.
+  const [signer, { network }] = await Promise.all([api.btcSigner(), btcNet(api)]);
+  const built = await api.buildLeg<BtcLegTx>(swapId, leg, spend.action, spend.action === 'claim' ? { secret: spend.secretHex } : {});
+  if (!built.psbtBase64 || !built.sighashHexes?.length) throw new Error('the API did not return a Bitcoin spend to sign');
+  const signaturesHex = signer.signServerSpend({ psbtBase64: built.psbtBase64, sighashHexes: built.sighashHexes, spends: htlc, paysTo: [signer.address], network });
+  const signed = { psbtBase64: built.psbtBase64, signaturesHex, ...(spend.action === 'claim' ? { preimageHex: spend.secretHex } : {}) };
+  return (await api.broadcastSigned('bitcoin', signed)).txid;
 }
 
 /**

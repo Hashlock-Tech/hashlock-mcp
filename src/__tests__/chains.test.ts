@@ -3,6 +3,7 @@ import { BtcSigner } from '../chains/btc.js';
 import { EvmSigner } from '../chains/evm.js';
 import { TronSigner } from '../chains/tron.js';
 import { familyOf, fundMustWait, feeForLeg } from '../settlement.js';
+import { serverBuild } from './btc-build.js';
 
 describe('familyOf', () => {
   it('maps chain names to settlement families', () => {
@@ -65,27 +66,8 @@ describe('BTC: signing a server-built spend', () => {
     // A stand-in for the HTLC: any witness script gives a P2WSH address, which is all the check reads.
     const witnessScript = Buffer.from('51', 'hex'); // OP_TRUE
     const htlc = bitcoin.payments.p2wsh({ redeem: { output: witnessScript, network: n }, network: n });
-    const build = (o: { from?: Buffer; to?: string; inputs?: number; outputs?: number } = {}) => {
-      const p = new bitcoin.Psbt({ network: n });
-      for (let i = 0; i < (o.inputs ?? 1); i++) {
-        p.addInput({
-          hash: Buffer.alloc(32, i + 1),
-          index: 0,
-          witnessUtxo: { script: o.from ?? htlc.output!, value: 100_000 },
-          witnessScript,
-        });
-      }
-      // What is not paid out goes to a miner, and the signer refuses a transaction that hands over most
-      // of the escrow — so the fixture leaves an ordinary fee behind: 1000 sats across the outputs.
-      const outs = o.outputs ?? 1;
-      const each = Math.floor(((o.inputs ?? 1) * 100_000 - 1_000) / (outs || 1));
-      for (let i = 0; i < outs; i++) p.addOutput({ address: o.to ?? signer.address, value: each });
-      const tx = bitcoin.Transaction.fromBuffer(p.data.getTransaction());
-      const sighashHexes = p.data.inputs.map((_, i) =>
-        tx.hashForWitnessV0(i, witnessScript, 100_000, bitcoin.Transaction.SIGHASH_ALL).toString('hex'),
-      );
-      return { psbtBase64: p.toBase64(), sighashHexes };
-    };
+    const build = (o: { from?: Buffer; to?: string; inputs?: number; outputs?: number } = {}) =>
+      serverBuild({ witnessScript, network: n, to: o.to ?? signer.address, from: o.from, inputs: o.inputs, outputs: o.outputs });
     const ask = (over: Record<string, unknown> = {}, b = build()) =>
       signer.signServerSpend({ ...b, spends: htlc.address!, paysTo: [signer.address], network: 'signet', ...over });
     return { signer, htlcAddress: htlc.address!, build, ask, bitcoin, n, kp };
@@ -138,7 +120,7 @@ describe('BTC: signing a server-built spend', () => {
 
   it('refuses a transaction that pays anyone but the agreed addresses', async () => {
     const { ask, build } = await setup();
-    expect(() => ask({}, build({ to: 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx' }))).toThrow(/nowhere this key can be refunded to/);
+    expect(() => ask({}, build({ to: 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx' }))).toThrow(/output 0 does not pay/);
   });
 
   it('refuses a spend that hands most of the escrow to a miner', async () => {

@@ -183,7 +183,7 @@ export class BtcSigner {
     psbt.txOutputs.forEach((o, i) => {
       if (!wantOut.some((w) => o.script.equals(w))) {
         throw new Error(
-          `refusing to sign: output ${i} pays ${p.paysTo.join(' or ')} — nowhere this key can be refunded to, so either this leg is not this agent's to refund, or the build is not the one it asked for`,
+          `refusing to sign: output ${i} does not pay ${p.paysTo.join(' or ')} — either the escrow's script names a key this agent does not sign with (a payout set from another wallet with set_settlement_address, or a leg that is not this agent's), or the build is not the one it asked for`,
         );
       }
     });
@@ -264,64 +264,4 @@ export class BtcSigner {
     psbt.finalizeAllInputs();
     return esploraBroadcast(chain.esplora, psbt.extractTransaction().toHex());
   }
-
-  /**
-   * Claim the HTLC P2WSH with the preimage. Witness = [sig, preimage, 0x01 (take the IF branch),
-   * redeemScript]. We sign input 0 with our key (must be the receiver pubkey embedded in the script).
-   */
-  async claim(
-    chain: BtcChain,
-    p: { p2wsh: string; redeemHex: string; preimageHex: string; toAddress?: string; feeSats?: number },
-  ): Promise<string> {
-    const n = net(chain.network);
-    const redeem = Buffer.from(p.redeemHex, 'hex');
-    const preimage = Buffer.from(p.preimageHex.replace(/^0x/i, ''), 'hex');
-    const fee = p.feeSats ?? 600;
-    const to = p.toAddress ?? this.address;
-
-    const utxos = await esploraUtxos(chain.esplora, p.p2wsh);
-    const u = utxos.find((x) => x.status.confirmed) ?? utxos[0];
-    if (!u) throw new Error('no UTXO at the HTLC address yet (funding unconfirmed?)');
-
-    const witnessScript = redeem;
-    const p2wsh = bitcoin.payments.p2wsh({ redeem: { output: redeem, network: n }, network: n });
-    const psbt = new bitcoin.Psbt({ network: n });
-    psbt.addInput({
-      hash: u.txid,
-      index: u.vout,
-      witnessUtxo: { script: p2wsh.output!, value: u.value },
-      witnessScript,
-    });
-    psbt.addOutput({ address: to, value: u.value - fee });
-    psbt.signInput(0, this.keyPair);
-
-    psbt.finalizeInput(0, (_idx: number, input: { partialSig?: { signature: Buffer }[] }) => {
-      const sig = input.partialSig![0]!.signature;
-      const witness = witnessStack([sig, preimage, Buffer.from([0x01]), redeem]);
-      return { finalScriptWitness: witness };
-    });
-    return esploraBroadcast(chain.esplora, psbt.extractTransaction().toHex());
-  }
-}
-
-/** Serialize a witness stack (count + [len|item]…) for finalScriptWitness. */
-function witnessStack(items: Buffer[]): Buffer {
-  const parts: Buffer[] = [varint(items.length)];
-  for (const it of items) {
-    parts.push(varint(it.length), it);
-  }
-  return Buffer.concat(parts);
-}
-function varint(n: number): Buffer {
-  if (n < 0xfd) return Buffer.from([n]);
-  if (n <= 0xffff) {
-    const b = Buffer.alloc(3);
-    b[0] = 0xfd;
-    b.writeUInt16LE(n, 1);
-    return b;
-  }
-  const b = Buffer.alloc(5);
-  b[0] = 0xfe;
-  b.writeUInt32LE(n, 1);
-  return b;
 }
