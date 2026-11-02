@@ -94,6 +94,30 @@ describe('stdio tools: every result validates against its output schema', async 
   });
 });
 
+// What /v1 build_fund/claim/refund answer, field for field (hashlock-markets packages/api/src/routes/settlement-legs.ts
+// and the builders it spreads: chains/evm/build.ts, chains/tron/build.ts buildTronTrigger, chains/solana/tx.ts
+// unsignedSolanaTx, btcFundAnswer, chains/bitcoin/spend.ts prepareBtcSpend — whose amountSats is a NUMBER).
+const LEG = { evm: '33333333-3333-4333-8333-333333333333', tron: '44444444-4444-4444-8444-444444444444', solana: '55555555-5555-4555-8555-555555555555', bitcoin: '66666666-6666-4666-8666-666666666666' };
+const evmTx = (value = '0x0') => ({ to: '0x' + '2'.repeat(40), data: '0x095ea7b3' + '0'.repeat(128), value });
+const tronTx = () => ({ transaction: { visible: false, txID: 'aa'.repeat(32), raw_data: { contract: [], ref_block_bytes: '0000', expiration: 1, timestamp: 0 }, raw_data_hex: '0a02' }, txID: 'aa'.repeat(32) });
+const solanaTx = { transactionBase64: 'AQAAAA==', blockhash: '9'.repeat(43), lastValidBlockHeight: 312345678 };
+const btcSpend = { toAddress: 'bc1q' + 'y'.repeat(38), psbtBase64: 'cHNidP8BAA==', sighashHex: '11'.repeat(32), sighashHexes: ['11'.repeat(32), '22'.repeat(32)], amountSats: 4998500, feeSats: 1500 };
+const BUILDS: Record<string, unknown> = {
+  [`POST /swaps/${LEG.evm}/legs/a/fund`]: { chain: 'ethereum', family: 'evm', chainId: 1, sign: 'evm-tx', from: '0x' + '3'.repeat(40), txs: [evmTx(), evmTx()] },
+  [`POST /swaps/${LEG.evm}/legs/b/claim`]: { chain: 'ethereum', family: 'evm', chainId: 1, sign: 'evm-tx', txs: [evmTx()] },
+  [`POST /swaps/${LEG.evm}/legs/a/refund`]: { chain: 'ethereum', family: 'evm', chainId: 1, sign: 'evm-tx', txs: [evmTx()] },
+  [`POST /swaps/${LEG.tron}/legs/a/fund`]: { chain: 'tron', family: 'tvm', sign: 'tron-txid', from: 'T' + 'A'.repeat(33), transactions: [tronTx(), tronTx()] },
+  [`POST /swaps/${LEG.tron}/legs/b/claim`]: { chain: 'tron', family: 'tvm', sign: 'tron-txid', from: 'T' + 'A'.repeat(33), transactions: [tronTx()] },
+  [`POST /swaps/${LEG.tron}/legs/a/refund`]: { chain: 'tron', family: 'tvm', sign: 'tron-txid', from: 'T' + 'A'.repeat(33), transactions: [tronTx()] },
+  [`POST /swaps/${LEG.solana}/legs/a/fund`]: { chain: 'solana', family: 'svm', sign: 'solana-tx', escrow: 'E'.repeat(44), ...solanaTx, note: 'Sign the base64 transaction with the funder key' },
+  [`POST /swaps/${LEG.solana}/legs/b/claim`]: { chain: 'solana', family: 'svm', sign: 'solana-tx', escrow: 'E'.repeat(44), ...solanaTx, note: 'Sign with the recipient key' },
+  [`POST /swaps/${LEG.solana}/legs/a/refund`]: { chain: 'solana', family: 'svm', sign: 'solana-tx', escrow: 'E'.repeat(44), timelockUnix: 1793750400, ...solanaTx, note: 'Only valid once the timelock has passed' },
+  [`POST /swaps/${LEG.bitcoin}/legs/a/fund`]: { chain: 'bitcoin', family: 'bitcoin', sign: 'btc-payment', payTo: 'bc1q' + 'x'.repeat(58), amountSats: '5000000', feePayTo: 'bc1q' + 'f'.repeat(38), feeAmountSats: '1500', note: 'Pay amountSats to payTo AND feeAmountSats to feePayTo' },
+  [`POST /swaps/${LEG.bitcoin}/legs/b/fund`]: { chain: 'bitcoin', family: 'bitcoin', sign: 'btc-payment', payTo: 'bc1q' + 'x'.repeat(58), amountSats: '20000', topUp: true, note: 'The escrow already holds 4980000 sats' },
+  [`POST /swaps/${LEG.bitcoin}/legs/b/claim`]: { chain: 'bitcoin', family: 'bitcoin', sign: 'btc-sighash', ...btcSpend, preimageHex: 'ab'.repeat(32), note: 'Sign EACH entry of sighashHexes' },
+  [`POST /swaps/${LEG.bitcoin}/legs/a/refund`]: { chain: 'bitcoin', family: 'bitcoin', sign: 'btc-sighash', ...btcSpend, timelockUnix: 1793750400, note: 'Only relayable once the MEDIAN TIME PAST has passed' },
+};
+
 describe('hosted tools: every result validates against its output schema', async () => {
   const v1Rfq = { ...rfq, client: 'api', quoteAmountHint: null };
   const v1Thread = { ...thread, counterpartyName: null, createdAt: '2026-11-02T00:00:00Z' };
@@ -111,9 +135,7 @@ describe('hosted tools: every result validates against its output schema', async
     'GET /wallets/nonce?purpose=authorize': { nonce: 'n2' },
     [`POST /rfqs/${ID}/quotes`]: { quote: { id: 'q' }, thread: { ...v1Thread, status: 'open', makerAccepted: true, takerAccepted: false } },
     [`POST /threads/${ID}/accept`]: { thread: v1Thread, swap },
-    [`POST /swaps/${ID}/legs/a/fund`]: { chain: 'bitcoin', family: 'bitcoin', sign: 'btc-payment', payTo: 'bc1q' + 'x'.repeat(58), amountSats: '5000000', feePayTo: 'bc1qfee', feeAmountSats: '1500', note: 'pay both' },
-    [`POST /swaps/${ID}/legs/b/fund`]: { chain: 'ethereum', family: 'evm', chainId: 1, sign: 'evm-tx', from: '0xabc', txs: [{ to: '0xdef', data: '0x00', value: '0' }] },
-    [`POST /swaps/${ID}/legs/a/claim`]: { chain: 'bitcoin', family: 'bitcoin', sign: 'btc-sighash', psbtBase64: 'cHNidP8=', sighashHexes: ['00'.repeat(32)], preimageHex: 'ab'.repeat(32), note: 'sign' },
+    ...BUILDS,
     'POST /tx/broadcast': { txid: 'ef'.repeat(32) },
   };
   const callV1: CallV1 = async (path, init) => {
@@ -134,14 +156,22 @@ describe('hosted tools: every result validates against its output schema', async
       ['swap_status', { id: ID }],
       ['quote_rfq', { id: ID, quoteAmount: '3500000000' }],
       ['accept_terms', { id: ID, quoteAmount: '3500000000' }],
-      ['build_fund', { id: ID, leg: 'a' }],
-      ['build_fund', { id: ID, leg: 'b' }],
-      ['build_claim', { id: ID, leg: 'a', secret: 'ab'.repeat(32) }],
       ['broadcast_tx', { chain: 'evm', signed: '0x00' }],
     ] as const) {
       const r = await call(name, args);
       expect(r.isError, name).toBe(false);
       expect(r.structuredContent, name).toEqual(JSON.parse(r.content[0]!.text));
+    }
+  });
+
+  it('every build shape validates — evm, tron, solana, bitcoin payment and sighash, for fund, claim and refund', async () => {
+    const tools = { fund: 'build_fund', claim: 'build_claim', refund: 'build_refund' } as const;
+    for (const route of Object.keys(BUILDS)) {
+      const [, id, leg, action] = route.match(/^POST \/swaps\/([^/]+)\/legs\/([ab])\/(\w+)$/)!;
+      const name = tools[action as keyof typeof tools];
+      const r = await call(name, { id, leg, ...(action === 'claim' ? { secret: 'ab'.repeat(32) } : {}) });
+      expect(r.isError, route).toBe(false);
+      expect(r.structuredContent, route).toEqual(BUILDS[route]);
     }
   });
 

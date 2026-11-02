@@ -11,4 +11,10 @@ describe('okContent', () => {
     const out = okContent([{ a: 1 }]);
     expect(out).toEqual({ content: [{ type: 'text', text: JSON.stringify([{ a: 1 }], null, 2) }], structuredContent: { items: [{ a: 1 }] } });
   });
+
+  it('wraps anything else that is not an object as { value }, so structuredContent is never absent', () => {
+    expect(okContent(null).structuredContent).toEqual({ value: null });
+    expect(okContent('x').structuredContent).toEqual({ value: 'x' });
+    expect(okContent(undefined).structuredContent).toEqual({ value: undefined });
+  });
 });
