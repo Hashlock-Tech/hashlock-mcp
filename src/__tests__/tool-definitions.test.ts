@@ -5,7 +5,7 @@ import { registerTools } from '../tools.js';
 
 // TDQS (Glama's tool-definition score): every tool says what it does to the world (annotations, with a title), and
 // every parameter says what it is. A new tool or parameter without them fails here, not in a directory's score.
-type Registered = { annotations?: { title?: string; readOnlyHint?: boolean; destructiveHint?: boolean }; inputSchema?: { shape?: Record<string, { description?: string }> } };
+type Registered = { annotations?: { title?: string; readOnlyHint?: boolean; destructiveHint?: boolean }; inputSchema?: { shape?: Record<string, { description?: string }> }; outputSchema?: unknown };
 const toolsOf = (s: McpServer) => (s as unknown as { _registeredTools: Record<string, Registered> })._registeredTools;
 
 function stdio() {
@@ -37,6 +37,7 @@ describe.each([
       expect(t.annotations?.title, name).toBeTruthy();
       expect(typeof t.annotations?.readOnlyHint, name).toBe('boolean');
       expect(typeof t.annotations?.destructiveHint, name).toBe('boolean');
+      expect(t.outputSchema, name).toBeTruthy();
     }
   });
   it('describes every parameter', () => {

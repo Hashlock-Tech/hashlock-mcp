@@ -4,6 +4,11 @@ import { okContent } from '../lib/result.js';
 describe('okContent', () => {
   it('wraps a value as pretty JSON MCP text content', () => {
     const out = okContent({ a: 1 });
-    expect(out).toEqual({ content: [{ type: 'text', text: JSON.stringify({ a: 1 }, null, 2) }] });
+    expect(out).toEqual({ content: [{ type: 'text', text: JSON.stringify({ a: 1 }, null, 2) }], structuredContent: { a: 1 } });
+  });
+
+  it('keeps an array as the JSON array in text, and as { items } in structuredContent', () => {
+    const out = okContent([{ a: 1 }]);
+    expect(out).toEqual({ content: [{ type: 'text', text: JSON.stringify([{ a: 1 }], null, 2) }], structuredContent: { items: [{ a: 1 }] } });
   });
 });

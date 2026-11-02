@@ -62,8 +62,8 @@ describe('classifyError', () => {
 
 describe('wrapTool', () => {
   it('passes through a successful handler result unchanged', async () => {
-    const wrapped = wrapTool(async (x: number) => ({ content: [{ type: 'text', text: String(x) }] }));
-    expect(await wrapped(5)).toEqual({ content: [{ type: 'text', text: '5' }] });
+    const wrapped = wrapTool(async (x: number) => ({ content: [{ type: 'text', text: String(x) }], structuredContent: { x } }));
+    expect(await wrapped(5)).toEqual({ content: [{ type: 'text', text: '5' }], structuredContent: { x: 5 } });
   });
 
   it('converts a thrown error into a structured envelope as tool content', async () => {
@@ -74,6 +74,7 @@ describe('wrapTool', () => {
     expect(payload.error.is_retryable).toBe(false);
     expect(typeof payload.error.recovery_hint).toBe('string');
     expect(payload.error.message).toContain('No trade found');
+    expect(out.structuredContent).toEqual(payload);
   });
 
   it('converts a non-Error throw (plain string) into a structured envelope', async () => {
