@@ -1,7 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ann, READ, WRITE } from '../lib/annotations.js';
 import { z } from 'zod';
-import { isObject } from '../lib/result.js';
+import { toStructured } from '../lib/result.js';
 import { ns, output, s, scalar, toolRegistrar } from '../lib/tool.js';
 import type { CallV1 } from './v1-client.js';
 
@@ -20,7 +20,7 @@ const out = (r: { status: number; json: unknown }) => ({
   content: [{ type: 'text' as const, text: typeof r.json === 'string' ? r.json : JSON.stringify(r.json, null, 2) }],
   isError: r.status >= 400,
   // What the output schema validates. An error skips that (isError), and structuredContent must be an object.
-  ...(r.status < 400 ? { structuredContent: isObject(r.json) ? r.json : { value: r.json } } : {}),
+  ...(r.status < 400 ? { structuredContent: toStructured(r.json) } : {}),
 });
 
 // ── output schemas: the top-level keys each /v1 route answers, and inside them only what an agent acts on next;
@@ -169,7 +169,7 @@ export function registerHostedTools(server: McpServer, callV1: CallV1): void {
         ...r,
         content: [{ type: 'text' as const, text: `${notice}\n\n${r.content[0]!.text}` }],
         // The notice travels in the structured result too: a client may hand the model this instead of the text.
-        structuredContent: { notice, ...r.structuredContent },
+        structuredContent: { ...r.structuredContent, notice }, // last: a body field named notice never replaces it
       };
     },
   );

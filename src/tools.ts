@@ -20,12 +20,12 @@ const THREAD = {
   status: s(),
   currentPrice: ns().describe('Total price on the table'),
   pendingPrice: ns().describe('Counter awaiting acceptance'),
-  youAccepted: z.boolean().nullable().describe('This side accepted currentPrice'),
+  youAccepted: z.boolean().describe('This side accepted currentPrice'),
 };
 const AGREED = { agreed: z.boolean(), swapId: s().describe('Set once agreed'), next_steps: s(), waiting_for: s() };
 const SWAP = { id: s().describe('Swap id'), status: s() };
 const OUT = {
-  assets: result({ items: z.array(output({ ref: s().describe('SYMBOL@chain'), id: s(), decimals: scalar() })) }),
+  assets: result({ items: z.array(output({ ref: s().describe('SYMBOL@chain'), id: s(), decimals: z.number() })) }),
   rfq: result(RFQ),
   createdRfq: result({ ...RFQ, share_link: s().describe('Private order link to share') }),
   rfqs: result({ items: z.array(output(RFQ)) }),
