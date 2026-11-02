@@ -11,15 +11,14 @@ import { z } from 'zod';
  */
 export const toolRegistrar =
   (server: McpServer) =>
-  <I extends ZodRawShapeCompat>(name: string, description: string, inputSchema: I, annotations: ToolAnnotations, outputSchema: z.AnyZodObject, cb: ToolCallback<I>) =>
+  <I extends ZodRawShapeCompat>(name: string, description: string, inputSchema: I, annotations: ToolAnnotations, outputSchema: z.ZodObject, cb: ToolCallback<I>) =>
     server.registerTool(name, { title: annotations.title, description, inputSchema, outputSchema, annotations }, cb);
 
 /** An output schema: the declared fields, every one optional, anything else passed through. */
 export const output = (shape: z.ZodRawShape) => z.object(shape).partial().passthrough();
 
 // Field types. A declared type must accept every value its producer can send: a mismatch turns a call that already
-// happened (a write included) into an error the agent may retry. A fresh instance per field: one shared instance is
-// emitted as a $ref to another field.
+// happened (a write included) into an error the agent may retry.
 /** A string the code proves is never null: one this server builds, or a NOT NULL column. */
 export const s = () => z.string();
 export const ns = () => z.string().nullable();

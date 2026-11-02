@@ -35,7 +35,7 @@ const OUT = {
   deal: result({ ...THREAD, swap: output(SWAP).nullable().describe('The HTLC swap once agreed'), has_local_secret: z.boolean() }),
   swap: result(SWAP),
   secret: result({ secret: s().describe('Preimage hex — sign your claim only'), hashlock: s() }),
-  whoami: result({ id: s().describe('Account id'), localSigners: output({ addresses: z.record(s()).describe('Keys held here, per chain') }), solanaLink: s() }),
+  whoami: result({ id: s().describe('Account id'), localSigners: output({ addresses: z.record(z.string(), s()).describe('Keys held here, per chain') }), solanaLink: s() }),
   tx: result({ tx: s().describe('On-chain tx id'), leg: s(), chain: s() }),
 };
 
