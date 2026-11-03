@@ -225,7 +225,8 @@ export function registerHostedTools(server: McpServer, callV1: CallV1): void {
     'Record a wallet you proved: send the message from wallet_proof_message and its signature. Alone it ' +
       'lets you give from that wallet on EVM only. With `authorization` (the authorizationMessage signed by your ' +
       'login wallet) it counts on every chain: payouts, Bitcoin/Solana refunds and TRON funding — the answer says ' +
-      '`authorised: true`. 409 = that wallet belongs to another account.',
+      '`authorised: true`. Bitcoin: also pass `publicKey`, the wallet\'s compressed key — kept with an authorised ' +
+      'proof (native or nested SegWit — bc1q…/3… — where the key derives the address), it fills your Bitcoin legs in new deals by itself. 409 = that wallet belongs to another account.',
     {
       family: z.enum(['evm', 'tron', 'solana', 'bitcoin']).describe('Chain family of the wallet'),
       address: ADDRESS.describe('The wallet you proved'),
@@ -235,11 +236,21 @@ export function registerHostedTools(server: McpServer, callV1: CallV1): void {
         .object({ address: ADDRESS.describe('Your login wallet'), message: z.string().describe('authorizationMessage, unchanged'), signature: z.string().describe("The login wallet's signature over it") })
         .optional()
         .describe('the login wallet signing authorizationMessage'),
+      publicKey: z
+        .string()
+        .regex(/^0[23][0-9a-fA-F]{64}$/)
+        .optional()
+        .describe("Bitcoin only: the wallet's compressed public key (66 hex) — kept when it derives `address`"),
     },
     ann('Prove a wallet', WRITE),
     OUT.proved,
-    async ({ family, address, message, signature, authorization }) =>
-      out(await callV1(`/wallets/${family}`, { method: 'POST', body: { address, message, signature, ...(authorization ? { authorization } : {}) } })),
+    async ({ family, address, message, signature, authorization, publicKey }) =>
+      out(
+        await callV1(`/wallets/${family}`, {
+          method: 'POST',
+          body: { address, message, signature, ...(authorization ? { authorization } : {}), ...(family === 'bitcoin' && publicKey ? { publicKey } : {}) },
+        }),
+      ),
   );
 
   tool(
