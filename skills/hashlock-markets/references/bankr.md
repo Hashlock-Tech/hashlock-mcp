@@ -67,10 +67,13 @@ const BANKR_WALLET = '0xYourBankrWallet';        // your Bankr EVM address (GET 
 // own code: the API names the factory, and an agent that sends wherever it is told trusts the API with
 // its money. A rotated factory is announced with a release of @hashlock-tech/mcp (src/pinned.ts).
 const FACTORIES = {
-  1: '0xa9b6a64837259034e949787b5d17bfa46304ff71',      // Ethereum
-  8453: '0xa9b6a64837259034e949787b5d17bfa46304ff71',   // Base
-  4663: '0xa9b6a64837259034e949787b5d17bfa46304ff71',   // Robinhood Chain
+  1: '0x0b43c409b89515e279f651883837d4eb4ead3f4d',      // Ethereum
+  8453: '0x0b43c409b89515e279f651883837d4eb4ead3f4d',   // Base
+  4663: '0x0b43c409b89515e279f651883837d4eb4ead3f4d',   // Robinhood Chain
 };
+// Every factory whose escrows are Hashlock's: the current one, and the one before it, which still settles the
+// deals funded before 2026-11-05. Read escrows through either; send new money only to FACTORIES.
+const KNOWN_FACTORIES = ['0x0b43c409b89515e279f651883837d4eb4ead3f4d', '0xa9b6a64837259034e949787b5d17bfa46304ff71'];
 const factory = FACTORIES[built.chainId];
 if (!factory) throw new Error(`no pinned Hashlock factory on chain ${built.chainId}`);
 // The escrow accepts funding only from `built.from` — stop if that is not this Bankr wallet.
@@ -128,10 +131,12 @@ const abi = parseAbi(['function hashlock() view returns (bytes32)', 'function re
 const get = (functionName) => pub.readContract({ address: clone, abi, functionName });
 const [h, rcpt, tok, amt, tl, ini, claimed, refunded] = await Promise.all(
   ['hashlock', 'recipient', 'token', 'amount', 'timelock', 'initiator', 'claimed', 'refunded'].map(get));
-// It is a Hashlock escrow only if the pinned factory derives this very address from these terms.
-const at = await pub.readContract({ address: FACTORIES[initiatorChainId], abi, functionName: 'computeAddress',
-  args: [keccak256(toHex(swap.id)), h, rcpt, tok, amt, tl, ini, initiatorLegFee /* the swap's feeAmount if that leg's asset is the fee asset, else 0 */] });
-if (at.toLowerCase() !== clone.toLowerCase() || claimed || refunded || h.toLowerCase() !== swap.hashlock.toLowerCase()
+// It is a Hashlock escrow only if a pinned factory derives this very address from these terms.
+// allSettled: one factory's RPC hiccup must not hide a match from the other.
+const ats = (await Promise.allSettled(KNOWN_FACTORIES.map((address) => pub.readContract({ address, abi, functionName: 'computeAddress',
+  args: [keccak256(toHex(swap.id)), h, rcpt, tok, amt, tl, ini, initiatorLegFee /* the swap's feeAmount if that leg's asset is the fee asset, else 0 */] }))))
+  .flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []));
+if (!ats.some((at) => at.toLowerCase() === clone.toLowerCase()) || claimed || refunded || h.toLowerCase() !== swap.hashlock.toLowerCase()
   || rcpt.toLowerCase() !== BANKR_WALLET.toLowerCase() || BigInt(amt) < BigInt(initiatorLeg.amount)
   || Number(tl) < myLegTimelockUnix + 7200) throw new Error('the initiator escrow is not the agreed one — do not fund');
 // The agreed asset (0x000…0 = the native coin), and the escrow really holds the amount.

@@ -380,6 +380,10 @@ again.
   but if a resend comes back with `Idempotency-Replayed: true` and an error, that error is stored: switch
   keys; after any other error answer, use a new key or none. The fund/claim/refund builders are never kept:
   each call builds afresh, so a key there changes nothing.
+- **You cannot agree to what you cannot fund**: an order, a quote, a counter and an accept are refused with
+  "Not enough X to fund this: it needs … and your wallet has …" when your wallet does not hold your leg (plus
+  the protocol fee if you are the taker, plus the chain's coin for network fees if your leg is that coin). Top
+  up, then try again.
 - **`409` is a state, not a failure**: "still processing" means wait and resend; anything else ("not enough
   TRX", "already funded", "would fail") tells you what to do — read it, do not just resend.
 - Errors come back as `{ "error": "<message>" }` with the HTTP status (the hosted MCP passes them through
