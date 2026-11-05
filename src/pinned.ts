@@ -34,15 +34,16 @@ export interface Rail {
 const t = (symbol: string, decimals: number): PinnedToken => ({ symbol, decimals });
 const lower = (m: Record<string, PinnedToken>) => Object.fromEntries(Object.entries(m).map(([k, v]) => [k.toLowerCase(), v]));
 
-const MAINNET_FACTORY = '0xa9B6a64837259034E949787B5d17Bfa46304ff71';
-// TODO(mainnet): once the owner deploys the QuillAudits round-3 contracts, put them in `fund` (and `all`)
-// and keep 0xa9B6… / TE97… / 7Egs… in `all` only.
+// QuillAudits round 3, on mainnet since 2026-11-04 (Etherscan/Basescan/Blockscout-verified). The factory before it
+// stays in `all`: escrows funded there until the rotation still settle through it.
+const MAINNET_FACTORY = '0x0B43C409B89515e279F651883837d4eB4ead3f4D';
+const RETIRED_FACTORY = '0xa9B6a64837259034E949787B5d17Bfa46304ff71'; // 2026-10-05 → 2026-11-04
 
 /** Per EVM chain id. */
 export const EVM: Record<number, Rail> = {
   1: {
     fund: [MAINNET_FACTORY],
-    all: [MAINNET_FACTORY],
+    all: [MAINNET_FACTORY, RETIRED_FACTORY],
     tokens: lower({
       '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48': t('USDC', 6),
       '0xdAC17F958D2ee523a2206206994597C13D831ec7': t('USDT', 6),
@@ -51,7 +52,7 @@ export const EVM: Record<number, Rail> = {
   },
   8453: {
     fund: [MAINNET_FACTORY],
-    all: [MAINNET_FACTORY],
+    all: [MAINNET_FACTORY, RETIRED_FACTORY],
     tokens: lower({
       '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913': t('USDC', 6),
       '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2': t('USDT', 6),
@@ -59,7 +60,7 @@ export const EVM: Record<number, Rail> = {
   },
   4663: {
     fund: [MAINNET_FACTORY],
-    all: [MAINNET_FACTORY],
+    all: [MAINNET_FACTORY, RETIRED_FACTORY],
     tokens: lower({ '0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168': t('USDG', 6) }),
   },
   11155111: {
@@ -97,8 +98,12 @@ export const EVM: Record<number, Rail> = {
 /** SharedHTLC pools and TRC-20s, per network (mainnet / Nile). */
 export const TRON: Record<Net, Rail> = {
   mainnet: {
-    fund: ['TE97fe1beR5nRZzjixi4azE36qWcHEWmNj'], // v2
-    all: ['TE97fe1beR5nRZzjixi4azE36qWcHEWmNj', 'TAyJCZ9a5uszYZw2Rt4RMLpJCQqQGhSz1p' /* v1, retired */],
+    fund: ['TTngcUqouXmEXfjHvdqHmiFcbNBm7gezu8'], // round 3, 2026-11-04 (tronscan-verified)
+    all: [
+      'TTngcUqouXmEXfjHvdqHmiFcbNBm7gezu8',
+      'TE97fe1beR5nRZzjixi4azE36qWcHEWmNj', // v2, retired 2026-11-04
+      'TAyJCZ9a5uszYZw2Rt4RMLpJCQqQGhSz1p', // v1, retired
+    ],
     tokens: { TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t: t('USDT', 6) },
   },
   testnet: {
@@ -117,8 +122,8 @@ export const TRON: Record<Net, Rail> = {
 /** HTLC programs and SPL mints, per network (mainnet / devnet). The markets repo's pda.ts DEPLOYED list. */
 export const SOLANA: Record<Net, Rail> = {
   mainnet: {
-    fund: ['7Egsecq7YU5n7PonndM7W7W92EFLZVGrnoaNPW8n1DEc'], // 2026-10-12, immutable
-    all: ['7Egsecq7YU5n7PonndM7W7W92EFLZVGrnoaNPW8n1DEc'],
+    fund: ['721JrU7NUvaRBSz3JGyuJQMZMgKrT28aonEGxzngMemf'], // round 3, 2026-11-04 (OtterSec-verified build)
+    all: ['721JrU7NUvaRBSz3JGyuJQMZMgKrT28aonEGxzngMemf', '7Egsecq7YU5n7PonndM7W7W92EFLZVGrnoaNPW8n1DEc' /* 2026-10-12, immutable, retired 2026-11-04 */],
     tokens: {
       EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: t('USDC', 6),
       Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB: t('USDT', 6),

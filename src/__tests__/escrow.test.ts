@@ -127,7 +127,7 @@ describe('pins: contracts and assets per network', () => {
 
   it("takes the network from the agent's own endpoints, never from /config", async () => {
     const api = (chainId: number, rpcUrl: string) =>
-      ({ evmChain: async () => ({ rpcUrl, chainId, factory: '0xa9B6a64837259034E949787B5d17Bfa46304ff71' }) }) as unknown as HashlockClient;
+      ({ evmChain: async () => ({ rpcUrl, chainId, factory: '0x0B43C409B89515e279F651883837d4eB4ead3f4D' }) }) as unknown as HashlockClient;
     net({ evmChainId: 8453 });
     await expect(evmNet(api(8453, 'https://rpc-a'), 'base')).resolves.toMatchObject({ chainId: 8453 });
     // The API says Ethereum mainnet; the agent's RPC is on Base: refused.
@@ -460,7 +460,7 @@ describe('fundMyLeg as the counterparty: the initiator escrow is checked on chai
       ...over,
     });
   const evmFund = vi.fn(async () => '0xtx');
-  const api = (factory = '0xa9B6a64837259034E949787B5d17Bfa46304ff71') =>
+  const api = (factory = '0x0B43C409B89515e279F651883837d4eB4ead3f4D') =>
     ({
       ...meApi,
       familyOf: async (c: string) => (c === 'bitcoin' ? 'btc' : 'evm'),
@@ -488,6 +488,8 @@ describe('fundMyLeg as the counterparty: the initiator escrow is checked on chai
   it('funds through the pinned factory, in the pinned token, and records the escrow it relied on', async () => {
     net({ evmChainId: 1, esplora: { confirmed: 600 } });
     await expect(fundMyLeg(api('0x' + '33'.repeat(20)), swap(), none, store(makerAgreement))).rejects.toThrow(/not an HTLC factory/);
+    // The factory retired on mainnet 2026-11-04: its escrows are still read, new money never goes into it.
+    await expect(fundMyLeg(api('0xa9B6a64837259034E949787B5d17Bfa46304ff71'), swap(), none, store(makerAgreement))).rejects.toThrow(/not an HTLC factory/);
     const s = store(makerAgreement);
     await expect(fundMyLeg(api(), swap(), none, s)).resolves.toMatchObject({ tx: '0xtx', leg: 'a' });
     expect(evmFund).toHaveBeenCalledWith(
