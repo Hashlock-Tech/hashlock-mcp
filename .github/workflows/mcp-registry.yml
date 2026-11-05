@@ -23,12 +23,17 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Verify server.json ↔ package.json versions
+      # ONE version everywhere (owner 2026-11-05): the registry entry, the npm package it names, package.json and
+      # the tag. They drifted apart before (registry 1.10.0 = npm 0.10.0) because only the package half was checked.
+      - name: Verify server.json ↔ package.json ↔ tag versions
         run: |
           PKG="$(node -p "require('./package.json').version")"
+          SJ="$(node -p "require('./server.json').version")"
           SJ_PKG="$(node -p "require('./server.json').packages[0].version")"
-          echo "package.json=$PKG server.json.packages[0]=$SJ_PKG"
-          [ "$PKG" = "$SJ_PKG" ] || { echo "::error::server.json packages[0].version ($SJ_PKG) != package.json version ($PKG)"; exit 1; }
+          # A manual dispatch runs on a branch: there is no tag to compare, so the tag stands in as package.json.
+          TAG="$PKG"; [ "$GITHUB_REF_TYPE" = tag ] && TAG="${GITHUB_REF_NAME#v}"
+          echo "package.json=$PKG server.json=$SJ server.json.packages[0]=$SJ_PKG tag=$TAG"
+          [ "$PKG" = "$SJ" ] && [ "$PKG" = "$SJ_PKG" ] && [ "$PKG" = "$TAG" ] || { echo "::error::versions differ: package.json $PKG, server.json $SJ, server.json.packages[0] $SJ_PKG, tag $TAG"; exit 1; }
 
       - name: Wait for the npm version to be live
         run: |
