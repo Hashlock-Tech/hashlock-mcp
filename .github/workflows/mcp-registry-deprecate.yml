@@ -1,14 +1,23 @@
 name: MCP Registry — deprecate old versions
 
-# Marks every registry version of io.github.Hashlock-Tech/hashlock other than `keep` as deprecated.
+# Marks every registry version of io.github.Hashlock-Tech/hashlock but the NEWEST as deprecated. Runs after
+# every publish (called from mcp-registry.yml), so a release leaves one active version without anyone
+# remembering to; before that it was a manual step, and 1.10.0–1.11.1 sat active beside 1.12.0. It can still
+# be dispatched by hand.
 # Same auth as mcp-registry.yml (GitHub OIDC proves the io.github.Hashlock-Tech namespace) — a personal
 # `mcp-publisher login github` gets 403 unless that user's org membership is visible to the registry.
 on:
   workflow_dispatch:
     inputs:
-      keep:
-        description: 'The one version that stays active (the current one)'
-        required: true
+      published:
+        description: 'A version just published that the registry list may not show yet (optional)'
+        required: false
+  workflow_call:
+    inputs:
+      published:
+        description: 'The version the caller just published'
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -25,14 +34,22 @@ jobs:
           echo "1370446bbe74d562608e8005a6ccce02d146a661fbd78674e11cc70b9618d6cf  mcp-publisher.tar.gz" | sha256sum -c -
           tar xzf mcp-publisher.tar.gz mcp-publisher
 
-      - name: Deprecate every version except the kept one
+      - name: Deprecate every version except the newest
         env:
-          KEEP: ${{ inputs.keep }}
+          PUBLISHED: ${{ inputs.published }}
         run: |
           set -euo pipefail
           N=io.github.Hashlock-Tech/hashlock
-          versions=$(curl -sf "https://registry.modelcontextprotocol.io/v0/servers?search=$N&limit=100" | jq -r '.servers[]|(.server // .).version')
-          echo "$versions" | grep -qx "$KEEP" || { echo "::error::$KEEP is not a published version"; exit 1; }
+          # This server's versions only: the search matches by substring, and another server's higher version
+          # would be picked as the one to keep.
+          versions=$(curl -sf --retry 3 --retry-all-errors "https://registry.modelcontextprotocol.io/v0/servers?search=$N&limit=100" \
+            | jq -r --arg n "$N" '.servers[]|(.server // .)|select(.name == $n)|.version')
+          # The ONE version that stays active is the newest stable one — of those listed and the one just
+          # published, which the list may not show yet. A patch on an older line is therefore deprecated on
+          # release, like every other superseded version.
+          KEEP=$(printf '%s\n' $versions "$PUBLISHED" | { grep -Ex '[0-9]+\.[0-9]+\.[0-9]+' || true; } | sort -V | tail -1)
+          [ -n "$KEEP" ] || { echo "::error::no published version found"; exit 1; }
+          echo "keeping $KEEP"
           ./mcp-publisher login github-oidc
           for v in $versions; do
             [ "$v" = "$KEEP" ] && continue

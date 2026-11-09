@@ -18,6 +18,8 @@ jobs:
   publish:
     name: Publish server.json
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.versions.outputs.version }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -26,6 +28,7 @@ jobs:
       # ONE version everywhere (owner 2026-11-05): the registry entry, the npm package it names, package.json and
       # the tag. They drifted apart before (registry 1.10.0 = npm 0.10.0) because only the package half was checked.
       - name: Verify server.json ↔ package.json ↔ tag versions
+        id: versions
         run: |
           PKG="$(node -p "require('./package.json').version")"
           SJ="$(node -p "require('./server.json').version")"
@@ -34,6 +37,7 @@ jobs:
           TAG="$PKG"; [ "$GITHUB_REF_TYPE" = tag ] && TAG="${GITHUB_REF_NAME#v}"
           echo "package.json=$PKG server.json=$SJ server.json.packages[0]=$SJ_PKG tag=$TAG"
           [ "$PKG" = "$SJ" ] && [ "$PKG" = "$SJ_PKG" ] && [ "$PKG" = "$TAG" ] || { echo "::error::versions differ: package.json $PKG, server.json $SJ, server.json.packages[0] $SJ_PKG, tag $TAG"; exit 1; }
+          echo "version=$PKG" >> "$GITHUB_OUTPUT"
 
       - name: Wait for the npm version to be live
         run: |
@@ -55,3 +59,17 @@ jobs:
         run: |
           ./mcp-publisher login github-oidc
           ./mcp-publisher publish
+
+  # One active version after every release: the newest stable one. Was a manual run nobody remembered.
+  # A pre-release (1.13.0-rc.1) supersedes nothing, so it does not run this — and would otherwise be marked
+  # deprecated by its own release. The next stable release deprecates it with the rest.
+  deprecate-older:
+    name: Deprecate older versions
+    needs: publish
+    if: ${{ !contains(needs.publish.outputs.version, '-') }}
+    uses: ./.github/workflows/mcp-registry-deprecate.yml
+    with:
+      published: ${{ needs.publish.outputs.version }}
+    permissions:
+      contents: read
+      id-token: write
