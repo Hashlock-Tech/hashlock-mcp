@@ -27,7 +27,7 @@ Add this to your MCP client configuration:
 }
 ```
 
-The server logs in autonomously via SIWE with that key (nonce → sign → JWT, refreshed on expiry). For a Bankr wallet, which has no key to export, set `HASHLOCK_BANKR_API_KEY` instead of `HASHLOCK_EVM_KEY`: Bankr signs, the server does the rest. Alternatively set `HASHLOCK_TOKEN` to a ready JWT. With neither, read-only tools still work.
+The server logs in autonomously via SIWE with that key (nonce → sign → JWT, refreshed on expiry). For a Bankr wallet, which has no key to export, set `HASHLOCK_BANKR_API_KEY` instead of `HASHLOCK_EVM_KEY`: the server builds and checks each transaction, Bankr signs and sends it. Alternatively set `HASHLOCK_TOKEN` to a ready JWT. With neither, read-only tools still work.
 
 ### Option 2: Global install
 

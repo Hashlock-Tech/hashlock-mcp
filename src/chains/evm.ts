@@ -8,6 +8,7 @@ import {
   keccak256,
   toHex,
   type Address,
+  type Hex,
 } from 'viem';
 import type { LocalAccount } from 'viem/accounts';
 import type { OnchainEscrow } from '../settlement.js';
@@ -160,21 +161,65 @@ export interface EvmChain {
   factory: Address;
 }
 
+export interface EvmCall {
+  to: Address;
+  data: Hex;
+  value?: bigint;
+}
+
+/**
+ * A wallet that signs and broadcasts its own transactions (its key is not in this process), as a browser
+ * wallet does for a web app. chains/bankr.ts is one. `send` answers with the hash of the transaction it broadcast.
+ */
+export interface SendingWallet {
+  address: Address;
+  signMessage(message: string): Promise<Hex>;
+  send(chainId: number, call: Required<EvmCall> & { gas: bigint }): Promise<Hex>;
+}
+
 export class EvmSigner {
-  /** The wallet: a local key, or one that signs elsewhere (chains/bankr.ts). Everything below is the same for both. */
-  constructor(readonly account: LocalAccount) {}
+  /**
+   * The wallet: a local key, which signs here and is broadcast through the chain's RPC, or one that sends
+   * its own transactions. What is sent, and how its outcome is read, is the same for both.
+   */
+  constructor(private readonly wallet: LocalAccount | SendingWallet) {}
   get address(): Address {
-    return this.account.address;
+    return this.wallet.address;
   }
   signLoginMessage(message: string): Promise<string> {
-    return this.account.signMessage({ message });
+    return 'send' in this.wallet ? this.wallet.signMessage(message) : this.wallet.signMessage({ message });
   }
 
-  private clients(chain: EvmChain) {
+  /**
+   * One call: checked against this server's own RPC first, handed over, and followed on this server's RPC
+   * until it is mined. A local key is signed here and broadcast through the RPC (viem estimates the gas,
+   * so a call that would revert stops before anything is sent). A wallet that sends itself is given the
+   * call with this server's gas estimate, which stops a reverting call the same way.
+   * `whenReverted` is appended to the error for a transaction that was mined and reverted.
+   */
+  private async send(chain: EvmChain, call: EvmCall, whenReverted = ''): Promise<Hex> {
     const def = { id: chain.chainId, name: `evm-${chain.chainId}`, nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 }, rpcUrls: { default: { http: [chain.rpcUrl] } } } as const;
-    const wallet = createWalletClient({ account: this.account, chain: def, transport: http(chain.rpcUrl) });
     const pub = createPublicClient({ chain: def, transport: http(chain.rpcUrl) });
-    return { wallet, pub };
+    const value = call.value ?? 0n;
+
+    let sent: Hex;
+    if ('send' in this.wallet) {
+      // viem checks this for a local key; here the chain id goes to the wallet, so it is checked here.
+      const onChain = await pub.getChainId();
+      if (onChain !== chain.chainId) throw new Error(`the endpoint configured for chain ${chain.chainId} answers as chain ${onChain} — check its URL`);
+      const gas = await pub.estimateGas({ account: this.wallet.address, to: call.to, data: call.data, value });
+      sent = await this.wallet.send(chain.chainId, { to: call.to, data: call.data, value, gas });
+    } else {
+      sent = await createWalletClient({ account: this.wallet, chain: def, transport: http(chain.rpcUrl) }).sendTransaction({ to: call.to, data: call.data, value });
+    }
+    const receipt = await pub.waitForTransactionReceipt({ hash: sent }).catch((e: unknown) => {
+      // It WAS sent: repeating the step now would send it a second time.
+      throw new Error(`transaction ${sent} was sent, but its outcome could not be read here (${(e as { shortMessage?: string }).shortMessage ?? (e as Error).message}) — check the swap before retrying`);
+    });
+    const hash = receipt.transactionHash; // the one that was mined, should the wallet have re-priced it
+    // A hash alone does not say the call went through: a transaction that was mined and reverted moved nothing.
+    if (receipt.status !== 'success') throw new Error(`transaction ${hash} was mined and reverted — it moved nothing; check the swap before retrying.${whenReverted}`);
+    return hash;
   }
 
   /** Create + fund the HTLC clone. salt = keccak256(uuid) (same derivation as the web). */
@@ -191,47 +236,27 @@ export class EvmSigner {
       fee: bigint;
     },
   ): Promise<string> {
-    const { wallet, pub } = this.clients(chain);
     const salt = keccak256(toHex(p.swapId));
     const token = p.token ?? ZERO;
-
     if (p.token) {
-      const approveTx = await wallet.sendTransaction({
-        to: p.token,
-        data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [chain.factory, p.amount + p.fee] }),
-      });
-      await pub.waitForTransactionReceipt({ hash: approveTx });
+      await this.send(chain, { to: p.token, data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [chain.factory, p.amount + p.fee] }) });
     }
-
     const data = encodeFunctionData({
       abi: factoryAbi,
       functionName: 'createSwap',
       args: [salt, `0x${p.hashlockHex}`, p.recipient, token, p.amount, BigInt(p.timelockUnix), p.refund, p.fee],
     });
-    const hash = await wallet.sendTransaction({
-      to: chain.factory,
-      data,
-      value: p.token ? 0n : p.amount + p.fee,
-    });
-    await pub.waitForTransactionReceipt({ hash });
-    return hash;
+    return this.send(chain, { to: chain.factory, data, value: p.token ? 0n : p.amount + p.fee });
   }
 
   /** Take the funded clone back after its timelock. The clone refuses before it, so the chain is the gate. */
   async refund(chain: EvmChain, clone: Address): Promise<string> {
-    const { wallet, pub } = this.clients(chain);
-    const data = encodeFunctionData({ abi: htlcAbi, functionName: 'refund', args: [] });
-    const hash = await wallet.sendTransaction({ to: clone, data });
-    await pub.waitForTransactionReceipt({ hash });
-    return hash;
+    return this.send(chain, { to: clone, data: encodeFunctionData({ abi: htlcAbi, functionName: 'refund', args: [] }) });
   }
 
   /** Claim a funded clone with the preimage (reveals the secret on-chain). */
   async claim(chain: EvmChain, clone: Address, secretHex: string): Promise<string> {
-    const { wallet, pub } = this.clients(chain);
     const data = encodeFunctionData({ abi: htlcAbi, functionName: 'claim', args: [`0x${secretHex.replace(/^0x/, '')}`] });
-    const hash = await wallet.sendTransaction({ to: clone, data });
-    await pub.waitForTransactionReceipt({ hash });
-    return hash;
+    return this.send(chain, { to: clone, data }, ' The secret is in that transaction\'s calldata, so it is public: if the leg is still open, claim it again at once.');
   }
 }

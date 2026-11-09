@@ -21,7 +21,7 @@ config:
       type: "string"
       title: "Bankr API key (instead of an EVM private key)"
       description: >-
-        The EVM wallet is the Bankr wallet behind this key; Bankr's Wallet API signs for it.
+        The EVM wallet is the Bankr wallet behind this key; Bankr's Wallet API signs and sends for it.
         Do not set together with HASHLOCK_EVM_KEY.
     HASHLOCK_TRON_KEY:
       type: "string"

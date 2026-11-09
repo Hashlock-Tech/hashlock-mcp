@@ -1,6 +1,6 @@
 import { BtcSigner, type BtcChain } from './chains/btc.js';
 import { privateKeyToAccount } from 'viem/accounts';
-import { bankrAccount } from './chains/bankr.js';
+import { bankrWallet } from './chains/bankr.js';
 import { EvmSigner, type EvmChain } from './chains/evm.js';
 import { SolanaSigner } from './chains/solana.js';
 import { TronSigner, type TronChain } from './chains/tron.js';
@@ -219,17 +219,17 @@ export class HashlockClient {
   }
   private chainCfg: ChainConfig | null = null;
 
-  /** Whether this process has an EVM wallet: a local key, or a Bankr wallet that signs for it. */
+  /** Whether this process has an EVM wallet: a local key, or a Bankr wallet. */
   get hasEvmWallet(): boolean {
     return !!(this.cfg.evmKey || this.cfg.bankrApiKey);
   }
   private get hasKey(): boolean {
     return !!(this.hasEvmWallet || this.cfg.tronKey || this.cfg.btcKey || this.cfg.solanaKey);
   }
-  /** Async because a Bankr wallet's address is Bankr's to tell (GET /wallet/me), asked once. */
+  /** Async because a Bankr wallet's address is Bankr's to tell (GET /wallet/me). */
   async evmSigner(): Promise<EvmSigner> {
     if (!this.hasEvmWallet) throw new Error('no EVM wallet — set HASHLOCK_EVM_KEY or HASHLOCK_BANKR_API_KEY');
-    return (this._evm ??= new EvmSigner(this.cfg.evmKey ? privateKeyToAccount(this.cfg.evmKey) : await bankrAccount(this.cfg.bankrApiKey!)));
+    return (this._evm ??= new EvmSigner(this.cfg.evmKey ? privateKeyToAccount(this.cfg.evmKey) : await bankrWallet(this.cfg.bankrApiKey!)));
   }
   tronSigner(): TronSigner {
     if (!this.cfg.tronKey) throw new Error('HASHLOCK_TRON_KEY not set');

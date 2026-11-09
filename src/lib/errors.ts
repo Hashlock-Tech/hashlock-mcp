@@ -12,13 +12,14 @@ export interface Classification {
 }
 
 const RULES: { test: RegExp; code: ErrorCode; is_retryable: boolean; recovery_hint: string }[] = [
-  // First, because a Bankr message is Bankr's own text ("MFA required", "Invalid API key") or carries a
-  // transaction's numbers, and the rules below would read those as a bad argument or a rate limit.
+  // First, because a Bankr message is Bankr's own text ("MFA required", "Invalid API key"), which the
+  // rules below would read as a bad argument. (The status-code rules match whole numbers only: a
+  // transaction hash in a message is not a 429.)
   { test: /\bBankr\b/, code: 'UNKNOWN', is_retryable: false,
-    recovery_hint: 'The Bankr wallet did not sign, and nothing was sent. The message names the cause: a Bankr security setting, the Bankr API key, or the request. Fix that in Bankr, then retry.' },
-  { test: /unauthor|missing api-token|forbidden|401/i, code: 'UNAUTHORIZED', is_retryable: false,
+    recovery_hint: 'The Bankr wallet refused or could not be reached. The message names the cause — the Bankr API key, a Bankr security setting or limit, or the network — and says so if a transaction may have been sent. Fix the cause in Bankr, and check the swap (deal_status) before repeating a write.' },
+  { test: /unauthor|missing api-token|forbidden|\b401\b/i, code: 'UNAUTHORIZED', is_retryable: false,
     recovery_hint: 'Set HASHLOCK_TOKEN (a JWT), or a wallet for autonomous SIWE login — HASHLOCK_EVM_KEY (0x private key) or HASHLOCK_BANKR_API_KEY (a Bankr wallet) — and retry.' },
-  { test: /429|too many requests|rate.?limit/i, code: 'RATE_LIMITED', is_retryable: true,
+  { test: /\b429\b|too many requests|rate.?limit/i, code: 'RATE_LIMITED', is_retryable: true,
     recovery_hint: 'Back off and retry after a short delay.' },
   { test: /(?:status|code|http|failed:?)\s*5\d{2}\b|\b5\d{2}\b\s*(?:internal server error|bad gateway|service unavailable|gateway timeout)|internal server error|bad gateway|service unavailable|gateway timeout|upstream|\brpc\b|econnreset|etimedout|fetch failed|network (?:error|request failed|timeout)/i, code: 'UPSTREAM_RPC_ERROR', is_retryable: true,
     recovery_hint: 'Transient upstream/RPC failure. Retry with backoff; if persistent, the backend or a chain RPC is degraded.' },
@@ -28,7 +29,7 @@ const RULES: { test: RegExp; code: ErrorCode; is_retryable: boolean; recovery_hi
     recovery_hint: 'Nobody has responded yet. Post a public RFQ with create_rfq and wait, or respond to an existing one from list_open_rfqs.' },
   { test: /not found|no trade|unknown trade|does not exist|cannot query field/i, code: 'NOT_FOUND', is_retryable: false,
     recovery_hint: 'Verify the id via my_rfqs / my_deals / list_open_rfqs, or re-create the request.' },
-  { test: /invalid|validation|must be|required|bad request|400|unsupported|not a valid/i, code: 'VALIDATION_ERROR', is_retryable: false,
+  { test: /invalid|validation|must be|required|bad request|\b400\b|unsupported|not a valid/i, code: 'VALIDATION_ERROR', is_retryable: false,
     recovery_hint: 'Fix the offending argument and retry. Check assets/chains via list_assets.' },
 ];
 

@@ -1,115 +1,91 @@
-import { parseTransaction, recoverTransactionAddress, serializeTransaction, type Address, type Hex, type TransactionSerializable } from 'viem';
-import { toAccount, type LocalAccount } from 'viem/accounts';
+import type { Address, Hex } from 'viem';
+import type { SendingWallet } from './evm.js';
 
 /**
- * AN EVM ACCOUNT WHOSE KEY LIVES IN BANKR. A Bankr wallet has no key to export, so an agent on one could
+ * AN EVM WALLET WHOSE KEY LIVES IN BANKR. A Bankr wallet has no key to export, so an agent on one could
  * not run this server and had to re-implement its settlement checks by hand from a recipe — and every
- * copy of them was weaker than the original. Here Bankr is only what a private key is to the other
- * account: the thing that produces a signature. The server still builds every transaction itself from
- * the deal it recorded, prices and numbers it against its own RPC, and broadcasts it there; Bankr's
- * Wallet API (POST /wallet/sign) is asked to sign it and nothing else.
+ * copy of them was weaker than the original. Here the Bankr wallet is what a browser wallet is to a web
+ * app: a wallet that sends its own transactions. This server still decides everything about a
+ * transaction — which contract, which calldata, how much value, from the deal it recorded — checks on
+ * its own RPC that the call would go through, and follows it there once it is sent (EvmSigner.send).
+ * Bankr's Wallet API is handed that exact call to sign and broadcast (POST /wallet/submit), and signs the
+ * login message (POST /wallet/sign).
  *
- * A signature that comes from somewhere else is checked before it is used: what Bankr signed must be,
- * byte for byte, the transaction that was built here — as it would be had a local key signed it — and
- * the signature must be this wallet's. So nothing this server did not build is ever broadcast, whatever
- * the API on the other end answers. There is no tolerance in that on purpose: a "same call, about the
- * same fee" rule has to say which differences are harmless, and a lower gas limit or a re-priced fee is
- * a transaction that reverts or never mines.
+ * It is /wallet/submit and not a signature because Bankr does not sign a raw transaction: /wallet/sign
+ * with eth_signTransaction answers "signTransaction: not supported — raw EVM transaction signing bypasses
+ * the signer's policy gate" (observed 2026-11-10, against its own OpenAPI). So the wallet's security
+ * settings and spending limits apply to everything sent here, and what goes on chain is Bankr's to send:
+ * this server trusts it to send the call it was given, as anyone keeping funds in a Bankr wallet does.
  */
 const BANKR_API = 'https://api.bankr.bot';
 
-async function bankr<T>(apiKey: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${BANKR_API}${path}`, {
-    method: body ? 'POST' : 'GET',
-    headers: { 'X-API-Key': apiKey, ...(body ? { 'content-type': 'application/json' } : {}) },
-    body: body ? JSON.stringify(body) : undefined,
-    signal: AbortSignal.timeout(30_000),
-    redirect: 'error', // the key goes to api.bankr.bot and nowhere a redirect points
-  }).catch((e: unknown) => {
-    throw new Error(`Bankr ${path}: could not be reached (${(e as Error).message})`);
-  });
-  const json = (await res.json().catch(() => null)) as { success?: boolean; error?: unknown; message?: unknown } | null;
-  if (!res.ok || !json || json.success === false) {
-    // Bankr's refusals name their own fix ("Arbitrary contract calls disabled", "Wallet paused", …). A
-    // validation error is an object ({ type, message, errors }), e.g. for a chain Bankr does not sign for.
-    const say = (v: unknown) => (typeof v === 'string' ? v : v ? JSON.stringify(v) : '');
-    throw new Error(`Bankr ${path}: ${[say(json?.error), say(json?.message)].filter(Boolean).join(' — ') || `HTTP ${res.status}`}`);
-  }
-  return json as T;
+interface Answer {
+  /** 0 when Bankr could not be reached at all. */
+  status: number;
+  /** null when the answer was not JSON (a gateway page, a body cut short). */
+  json: { success?: boolean; error?: unknown; message?: unknown; [k: string]: unknown } | null;
+  /** Why not, in Bankr's own words where it gave any. */
+  why: string;
 }
 
-/** POST /wallet/sign; the signature, or an error when the answer carries none. */
-async function sign(apiKey: string, body: object): Promise<Hex> {
-  const { signature } = await bankr<{ signature?: unknown }>(apiKey, '/wallet/sign', body);
-  if (typeof signature !== 'string' || !signature.startsWith('0x')) throw new Error('Bankr /wallet/sign answered without a signature');
-  return signature as Hex;
-}
-
-const FIELDS = ['type', 'chainId', 'nonce', 'gas', 'maxFeePerGas', 'maxPriorityFeePerGas', 'gasPrice', 'to', 'value', 'data'] as const;
-
-/**
- * How `signed` is not the transaction `asked` for, or null when it is exactly that. The test is on the
- * bytes a key signs (the unsigned serialization); the field names are only for the message.
- */
-export function differsFrom(asked: TransactionSerializable, signed: TransactionSerializable): string | null {
-  const { r: _r, s: _s, v: _v, yParity: _y, ...body } = signed as TransactionSerializable & Record<string, unknown>;
-  let bytes: string;
+async function ask(apiKey: string, path: string, body?: unknown): Promise<Answer> {
+  let res: Response;
   try {
-    bytes = serializeTransaction(body as TransactionSerializable);
+    res = await fetch(`${BANKR_API}${path}`, {
+      method: body ? 'POST' : 'GET',
+      headers: { 'X-API-Key': apiKey, ...(body ? { 'content-type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(30_000),
+      redirect: 'error', // the key goes to api.bankr.bot and nowhere a redirect points
+    });
   } catch (e) {
-    return `not a valid transaction: ${(e as { shortMessage?: string }).shortMessage ?? (e as Error).message}`; // e.g. a tip above the fee cap
+    return { status: 0, json: null, why: `could not be reached (${(e as Error).message})` };
   }
-  if (bytes === serializeTransaction(asked)) return null;
-  const val = (t: Record<string, unknown>, f: string) => String(t[f] ?? (f === 'data' ? '0x' : f === 'value' ? 0n : '')).toLowerCase();
-  const off = FIELDS.filter((f) => val(asked as never, f) !== val(body, f)).map((f) => `${f} ${val(body, f) || 'unset'}`);
-  return off.join(', ') || 'its encoding';
+  const json = (await res.json().catch(() => null)) as Answer['json'];
+  // Bankr's refusals name their own fix ("Arbitrary contract calls disabled", "Wallet paused", …). A
+  // validation error is an object ({ type, message, errors }), e.g. for a chain Bankr does not send on.
+  const say = (v: unknown) => (typeof v === 'string' ? v : v ? JSON.stringify(v) : '');
+  return { status: res.status, json, why: [say(json?.error), say(json?.message)].filter(Boolean).join(' — ') || `HTTP ${res.status}` };
 }
 
-export async function bankrAccount(apiKey: string): Promise<LocalAccount> {
-  const me = await bankr<{ wallets?: { chain: string; address: string }[] }>(apiKey, '/wallet/me');
-  const address = me.wallets?.find((w) => w.chain === 'evm')?.address as Address | undefined;
+const refused = (a: Answer) => !a.json || a.status < 200 || a.status >= 300 || a.json.success === false;
+
+export async function bankrWallet(apiKey: string): Promise<SendingWallet> {
+  const me = await ask(apiKey, '/wallet/me');
+  if (refused(me)) throw new Error(`Bankr /wallet/me: ${me.why}`);
+  const address = (me.json!.wallets as { chain: string; address: string }[] | undefined)?.find((w) => w.chain === 'evm')?.address as Address | undefined;
   if (!address) throw new Error('Bankr /wallet/me: this key has no EVM wallet');
 
-  return toAccount({
+  return {
     address,
-    async signMessage({ message }) {
-      if (typeof message !== 'string') throw new Error('a Bankr wallet signs text messages only');
-      return sign(apiKey, { signatureType: 'personal_sign', message });
+    async signMessage(message) {
+      const a = await ask(apiKey, '/wallet/sign', { signatureType: 'personal_sign', message });
+      if (refused(a)) throw new Error(`Bankr /wallet/sign: ${a.why}`);
+      const signature = a.json!.signature;
+      if (typeof signature !== 'string' || !signature.startsWith('0x')) throw new Error('Bankr /wallet/sign answered without a signature');
+      return signature as Hex;
     },
-    async signTransaction(tx) {
-      const fee = tx.maxFeePerGas ?? tx.gasPrice;
-      if (!tx.to || tx.chainId === undefined || tx.nonce === undefined || tx.gas === undefined || fee === undefined) {
-        throw new Error('a Bankr wallet signs only a prepared call: to, chain id, nonce, gas and fee');
-      }
-      const signature = await sign(apiKey, {
-        signatureType: 'eth_signTransaction',
-        transaction: {
-          to: tx.to,
-          chainId: tx.chainId,
-          value: (tx.value ?? 0n).toString(),
-          data: tx.data ?? '0x',
-          gas: tx.gas.toString(),
-          nonce: tx.nonce,
-          ...(tx.maxFeePerGas !== undefined
-            ? { maxFeePerGas: tx.maxFeePerGas.toString(), maxPriorityFeePerGas: (tx.maxPriorityFeePerGas ?? 0n).toString() }
-            : { gasPrice: fee.toString() }),
-        },
+    async send(chainId, call) {
+      const a = await ask(apiKey, '/wallet/submit', {
+        // The gas limit is this server's own estimate, so Bankr's node does not have to have seen the
+        // transaction this one depends on (the approve before a createSwap).
+        transaction: { to: call.to, chainId, data: call.data, value: call.value.toString(), gas: call.gas.toString() },
+        description: 'Hashlock HTLC settlement',
+        // Do not wait at Bankr: the receipt is read from this server's RPC, the view everything else here is checked against.
+        waitForConfirmation: false,
       });
-      let signed: TransactionSerializable;
-      let from: Address;
-      try {
-        signed = parseTransaction(signature as never) as TransactionSerializable;
-        from = await recoverTransactionAddress({ serializedTransaction: signature as never });
-      } catch {
-        throw new Error('Bankr /wallet/sign did not answer with a signed transaction — nothing was sent');
-      }
-      if (from.toLowerCase() !== address.toLowerCase()) throw new Error(`Bankr signed as ${from}, not as this wallet (${address}) — nothing was sent`);
-      const diff = differsFrom(tx, signed);
-      if (diff) throw new Error(`Bankr signed a different transaction than the one built here (${diff}) — nothing was sent`);
-      return signature as never;
+      // Bankr's rule: an answer that carries a transaction hash WAS broadcast, failure or not. The chain says what became of it.
+      const hash = a.json?.transactionHash;
+      if (typeof hash === 'string' && /^0x[0-9a-fA-F]{64}$/.test(hash)) return hash as Hex;
+      // What to tell the agent. Bankr rejects before it signs for the key (401), its security settings and
+      // limits (403, "rejected before anything is broadcast"), its rate limit (429), a request it could not
+      // parse (400 with a validation object, e.g. a chain it does not send on) and a wallet short of gas
+      // (400 insufficient_funds_for_gas). For anything else — a "submission failed" without a hash, no
+      // answer, a gateway error — it only promises that a hash means it WAS sent, and this endpoint takes
+      // no idempotency key.
+      const e = a.json?.error;
+      const before = a.json && (a.status === 401 || a.status === 403 || a.status === 429 || (a.status === 400 && ((typeof e === 'object' && e !== null) || e === 'insufficient_funds_for_gas')));
+      throw new Error(`Bankr /wallet/submit: ${a.why}${before ? '' : ' — the transaction may or may not have been sent; check the swap before retrying'}`);
     },
-    async signTypedData() {
-      throw new Error('typed data is not signed by this server');
-    },
-  });
+  };
 }

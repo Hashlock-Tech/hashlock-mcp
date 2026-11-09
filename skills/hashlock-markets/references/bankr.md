@@ -1,6 +1,6 @@
 # Hashlock Markets with a Bankr wallet
 
-A Bankr agent trades on Hashlock with its own Bankr wallet: Bankr signs, Hashlock never holds the key.
+A Bankr agent trades on Hashlock with its own Bankr wallet: Bankr signs and sends, Hashlock never holds the key.
 Trade on the chains both support — **Ethereum (1)**, **Base (8453)** and **Robinhood Chain (4663)**.
 
 ## Why a Bankr agent uses Hashlock
@@ -26,15 +26,15 @@ Trade on the chains both support — **Ethereum (1)**, **Base (8453)** and **Rob
 2. In the Bankr wallet's Security settings, turn on **"Enable arbitrary contract calls"** (it needs MFA on
    the Bankr account) — Hashlock's escrow transactions are contract calls, and Bankr refuses them otherwise
    (`403`).
-3. No **allowed recipients** on that key, and the wallet's **permitted recipients** list off: Bankr does not
-   sign or submit a raw transaction while either is on.
+3. No **allowed recipients** on that key: Bankr refuses every raw transaction from such a key. If the
+   wallet's **permitted recipients** list is on, a leg in the chain's native coin is refused unless
+   Hashlock's factory is on it.
 4. Keep some **ETH for gas** on each chain you settle on. Gas is not sponsored.
 
-## Settle with the Hashlock MCP server — it signs through your Bankr wallet
+## Settle with the Hashlock MCP server — it sends through your Bankr wallet
 
 If your agent can start a local process, run Hashlock's own MCP server (`@hashlock-tech/mcp`) and give it
-your Bankr key. It is the same server an agent with a private key runs; only the
-signature comes from Bankr.
+your Bankr key. It is the same server an agent with a private key runs; only the wallet is Bankr's.
 
 ```json
 {
@@ -61,18 +61,22 @@ signature comes from Bankr.
   in its release, under a capped fee and timelock; as the counterparty it reads the initiator's escrow on
   chain before funding; before a claim it reads the escrow it claims from, and it keeps the swap secret on
   your machine.
-- **Bankr only signs.** The server asks Bankr's `/wallet/sign` to sign the transaction it built, checks that
-  what came back is exactly that transaction, signed by your wallet, and broadcasts it through your own RPC.
-  If Bankr answers with anything else, nothing is sent.
-- **A claim and a refund need Bankr's signature too.** Leave the wallet unpaused and the settings above as
-  they are until every swap is settled or refunded.
+- **Bankr signs and sends.** The server checks on your own RPC that the call would go through, hands Bankr
+  that exact call (`POST /wallet/submit`: contract, calldata, value, gas), and follows the transaction on
+  your RPC; one that was mined and reverted is reported as a failure. Bankr does not sign a raw transaction
+  for you to broadcast, so what goes on chain is Bankr's to send, as with everything else in a Bankr wallet.
+- **Your Bankr security settings apply**: the pause, the contract-calls switch, and the per-transaction and
+  daily limits on a native-coin leg. A claim and a refund go through Bankr too, so leave the wallet unpaused
+  and those settings as they are until every swap is settled or refunded.
+- **Get the settings right before you agree a deal.** Once this server has started to fund a swap it does
+  not fund that swap again, whatever stopped it — it cannot be certain that nothing left. If Bankr refuses a
+  funding, fix the cause, let that deal lapse and agree a new one. A claim or a refund that Bankr refuses
+  can simply be repeated.
 - **Do the whole deal through this server** — post or quote, negotiate, set addresses, then `fund_leg`,
   `claim_leg` (and `refund_leg` after a timelock). It settles only deals agreed through it. Its tools take
   human amounts (`"0.5"`) and assets as `SYMBOL@chain`; each tool describes itself.
-- **Fund the wallet with what you mean to trade.** Bankr documents its per-transaction and daily limits for
-  transactions it submits; here it only signs, so do not count on those limits.
 - An RPC URL is needed for every chain you settle on (`HASHLOCK_EVM_RPC` is Ethereum's): the server reads
-  escrows and sends your transactions through it.
+  escrows, checks each call and follows your transactions through it.
 
 ## If your agent cannot run a local server
 
@@ -120,7 +124,15 @@ shorter set of checks that is safe to copy: a transaction's destination alone do
 | Answer | Fix |
 |---|---|
 | `403` "Arbitrary contract calls disabled" / "MFA required" | Turn on MFA, then the setting, in the Bankr wallet. |
-| `403` "Restricted API key" / `RECIPIENT_NOT_PERMITTED` | Remove allowed recipients from the key; turn the permitted-recipients list off. |
+| `403` "Restricted API key" | Remove allowed recipients from the key. |
+| `403` `RECIPIENT_NOT_PERMITTED` / `RECIPIENT_COOLDOWN` (a native-coin leg) | Put Hashlock's factory on the permitted-recipients list (a new entry waits out a cooldown), or turn the list off. |
+| `403` `PER_TX_LIMIT_EXCEEDED` / `DAILY_LIMIT_EXCEEDED` / `PRICING_UNAVAILABLE` (a native-coin leg) | Raise or turn off the limit in Security settings. |
 | `403` "Read-only API key" | Use a key with read-only off. |
 | `403` "Wallet paused" | Unpause the wallet. |
+| `429` | Bankr allows 10 wallet writes a minute; wait and try again. |
 | Not enough ETH for gas | Top up ETH on that chain. |
+
+With the MCP server: after any of these on `claim_leg` or `refund_leg`, fix the cause and call the tool
+again. On `fund_leg` the server does not fund the same swap a second time: fix the cause and agree a new
+deal. If it says a transaction "may or may not have been sent", Bankr did not say what it did — look at
+`deal_status` before anything else.

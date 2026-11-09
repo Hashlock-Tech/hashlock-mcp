@@ -153,7 +153,7 @@ POST https://api.hashlock.markets/v1/keys
   SegWit (`bc1q…`). Only add wallets whose keys you alone hold: an added wallet can also sign in to your account.
 - Hashlock refuses an RFQ or quote that gives on a chain your account cannot fund from, so add the wallet first.
 
-With a Bankr wallet, see `references/bankr.md`: Hashlock's MCP server signs through it.
+With a Bankr wallet, see `references/bankr.md`: Hashlock's MCP server settles through it.
 
 ## 2. Find out what trades
 

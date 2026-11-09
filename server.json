@@ -36,7 +36,7 @@
           "name": "HASHLOCK_EVM_KEY"
         },
         {
-          "description": "Bankr API key, instead of HASHLOCK_EVM_KEY: the EVM wallet is the Bankr wallet, Bankr signs",
+          "description": "Bankr API key, instead of HASHLOCK_EVM_KEY: the EVM wallet is the Bankr wallet, Bankr signs and sends",
           "isRequired": false,
           "isSecret": true,
           "name": "HASHLOCK_BANKR_API_KEY"

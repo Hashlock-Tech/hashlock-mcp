@@ -335,8 +335,8 @@ export async function fundMyLeg(
   // One leg of the agent's under one hashlock: revealing it to settle one deal would open every other
   // escrow under it, so a second swap reusing it is refused. Checked and recorded at the last moment —
   // right before the signer sends — so a funding refused by any check leaves both free. A signer that
-  // fails after it (an empty wallet) leaves them taken: that swap can be retried, another needs a new
-  // agreement.
+  // fails after it (an empty wallet, a wallet that refuses the call) leaves them taken, and this server
+  // does not fund that swap again: it cannot tell for certain that nothing left.
   const commit = () => {
     agreements.takeOnce(`funded:${swap.id}`, `funding of your ${view.chain} leg of swap ${swap.id}`);
     agreements.rely(`hashlock:${hashlock}`, swap.id);

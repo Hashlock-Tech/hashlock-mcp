@@ -4,7 +4,7 @@
  *  - HASHLOCK_TOKEN    — a ready JWT (copy from an authenticated session)
  *  - HASHLOCK_EVM_KEY  — 0x… 32-byte hex; SIWE (personal_sign) login, and signs EVM fund/claim
  *  - HASHLOCK_BANKR_API_KEY — a Bankr API key, INSTEAD of HASHLOCK_EVM_KEY: the EVM wallet is the Bankr
- *    wallet behind it, and Bankr's Wallet API signs for it (chains/bankr.ts)
+ *    wallet behind it; Bankr signs the login and sends the transactions this server builds (chains/bankr.ts)
  *  - HASHLOCK_TRON_KEY — 64-hex (TronLink-style); TRON signMessageV2 login, and signs TRON fund/claim
  *  - HASHLOCK_BTC_KEY  — WIF; BIP-322 login, and signs BTC HTLC claims
  *  - HASHLOCK_SOLANA_KEY — base58 (the 64-byte export a wallet gives, or a 32-byte seed). SIGNING
@@ -18,7 +18,7 @@ export interface Config {
   appUrl: string;
   token?: string;
   evmKey?: `0x${string}`;
-  /** The EVM wallet is a Bankr wallet; Bankr signs for it. Never set together with evmKey. */
+  /** The EVM wallet is a Bankr wallet, which sends its own transactions. Never set together with evmKey. */
   bankrApiKey?: string;
   tronKey?: string; // 64-hex, no 0x
   btcKey?: string; // WIF

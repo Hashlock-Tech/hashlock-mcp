@@ -97,13 +97,16 @@ server composes each one and the agent signs the bytes it is handed. Set the age
 
 **A Bankr wallet as the EVM wallet.** A Bankr wallet has no key to export, so set `HASHLOCK_BANKR_API_KEY`
 (a Bankr API key with the Wallet API enabled, read-only off, "Enable arbitrary contract calls" on, and no
-allowed or permitted recipients) instead of `HASHLOCK_EVM_KEY`. The server still builds
-every transaction itself, prices and numbers it against your RPC and broadcasts it there. Bankr's
-`POST /wallet/sign` is asked only for the signature, and the signed transaction is used only if it is exactly
-the transaction built here, signed by that wallet — otherwise nothing is sent. A claim and a refund need that
-signature too, so leave the wallet unpaused and those settings as they are until every swap is settled or
-refunded. Bankr documents its spending
-limits for transactions it submits, not for ones it only signs: keep in the wallet what you mean to trade.
+allowed recipients on the key) instead of `HASHLOCK_EVM_KEY`. The server still builds every transaction
+itself from the deal it recorded and checks on your RPC that the call would go through; it then hands Bankr
+that exact call to sign and send (`POST /wallet/submit`) and follows the transaction on your RPC. Bankr does
+not sign a raw transaction for someone else to broadcast, so what goes on chain is Bankr's to send, and the
+wallet's security settings and spending limits apply. As with a local key, once the server has started to
+fund a swap it does not fund it again, whatever stopped it — so set the wallet up before agreeing a deal; a claim
+or a refund that Bankr refuses can be repeated. When Bankr does not say what it did with a transaction, it may be
+out, and the server says so. A claim
+and a refund go through Bankr too: leave the wallet unpaused and those settings as they are until every swap is
+settled or refunded.
 
 With none set, read-only tools (`list_assets`, `list_open_rfqs`, `get_rfq`) still work. Use a dedicated key with only the funds you intend to trade.
 
