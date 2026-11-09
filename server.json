@@ -8,14 +8,14 @@
     "source": "github",
     "id": "1206275989"
   },
-  "version": "1.11.1",
+  "version": "1.12.0",
   "websiteUrl": "https://hashlock.markets",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@hashlock-tech/mcp",
-      "version": "1.11.1",
+      "version": "1.12.0",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"

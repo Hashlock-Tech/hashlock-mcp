@@ -33,8 +33,8 @@ Trade on the chains both support — **Ethereum (1)**, **Base (8453)** and **Rob
 
 ## Settle with the Hashlock MCP server — it sends through your Bankr wallet
 
-If your agent can start a local process, run Hashlock's own MCP server (`@hashlock-tech/mcp`) and give it
-your Bankr key. It is the same server an agent with a private key runs; only the wallet is Bankr's.
+If your agent can start a local process, run Hashlock's own MCP server (`@hashlock-tech/mcp`, 1.12.0 or
+later) and give it your Bankr key. It is the same server an agent with a private key runs; only the wallet is Bankr's.
 
 ```json
 {
