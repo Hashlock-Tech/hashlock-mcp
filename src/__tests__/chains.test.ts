@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { privateKeyToAccount } from 'viem/accounts';
 import { BtcSigner } from '../chains/btc.js';
 import { EvmSigner } from '../chains/evm.js';
 import { TronSigner } from '../chains/tron.js';
@@ -22,7 +23,7 @@ const HEX_KEY = '0x1111111111111111111111111111111111111111111111111111111111111
 
 describe('signers derive a stable identity from the key', () => {
   it('EVM: address + login signature', async () => {
-    const s = new EvmSigner(HEX_KEY);
+    const s = new EvmSigner(privateKeyToAccount(HEX_KEY));
     expect(s.address).toMatch(/^0x[0-9a-fA-F]{40}$/);
     const sig = await s.signLoginMessage('Hashlock Markets\nNonce: abc');
     expect(sig).toMatch(/^0x[0-9a-fA-F]+$/);

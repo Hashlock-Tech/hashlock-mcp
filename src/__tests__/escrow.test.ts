@@ -466,7 +466,8 @@ describe('fundMyLeg as the counterparty: the initiator escrow is checked on chai
       familyOf: async (c: string) => (c === 'bitcoin' ? 'btc' : 'evm'),
       btcSigner: async () => btcSigner,
       btcEsplora: () => 'https://esplora',
-      evmSigner: () => ({ address: '0x' + '22'.repeat(20), fund: evmFund }),
+      hasEvmWallet: true,
+      evmSigner: async () => ({ address: '0x' + '22'.repeat(20), fund: evmFund }),
       evmChain: async () => ({ rpcUrl: 'https://eth', chainId: 1, factory }),
     }) as unknown as HashlockClient;
   const none = { findByHashlock: () => null, markFunded: vi.fn() };
@@ -579,7 +580,8 @@ describe('the secret leaves only through releaseOwnSecret', () => {
     const api = {
       ...meApi,
       familyOf: async () => 'evm',
-      evmSigner: () => ({ claim }),
+      hasEvmWallet: true,
+      evmSigner: async () => ({ address: '0x' + '55'.repeat(20), claim }),
       evmChain: async () => ({ rpcUrl: 'https://eth2', chainId: 1 }),
       reveal: async () => ({}),
     } as unknown as HashlockClient;

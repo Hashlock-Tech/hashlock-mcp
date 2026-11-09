@@ -12,8 +12,9 @@ import { registerTools } from './tools.js';
  * Non-custodial cross-chain OTC: sealed RFQ + negotiation + HTLC atomic settlement
  * (both legs settle or both refund; no custodian).
  *
- * Auth (env): HASHLOCK_TOKEN (a JWT) or HASHLOCK_EVM_KEY (0x private key — the server performs
- * SIWE login itself; the fully-autonomous path). HASHLOCK_API_URL overrides the endpoint.
+ * Auth (env): HASHLOCK_TOKEN (a JWT), or a wallet — HASHLOCK_EVM_KEY (0x private key) or
+ * HASHLOCK_BANKR_API_KEY (a Bankr wallet) — with which the server performs SIWE login itself; the
+ * fully-autonomous path. HASHLOCK_API_URL overrides the endpoint.
  * Swap secrets are generated locally and stored at ~/.hashlock/mcp-secrets.json (0600).
  */
 const cfg = loadConfig();
@@ -27,5 +28,5 @@ registerTools(server, api, secrets, AgreementStore.besides(cfg.secretsPath));
 const transport = new StdioServerTransport();
 await server.connect(transport);
 console.error(
-  `[hashlock-mcp] ready — API ${cfg.apiUrl}, auth: ${cfg.token ? 'token' : cfg.evmKey ? 'evm-key (autonomous SIWE)' : 'none (read-only)'}`,
+  `[hashlock-mcp] ready — API ${cfg.apiUrl}, auth: ${cfg.token ? 'token' : cfg.evmKey ? 'evm-key (autonomous SIWE)' : cfg.bankrApiKey ? 'bankr wallet (autonomous SIWE)' : 'none (read-only)'}`,
 );

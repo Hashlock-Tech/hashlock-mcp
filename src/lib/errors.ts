@@ -12,8 +12,12 @@ export interface Classification {
 }
 
 const RULES: { test: RegExp; code: ErrorCode; is_retryable: boolean; recovery_hint: string }[] = [
+  // First, because a Bankr message is Bankr's own text ("MFA required", "Invalid API key") or carries a
+  // transaction's numbers, and the rules below would read those as a bad argument or a rate limit.
+  { test: /\bBankr\b/, code: 'UNKNOWN', is_retryable: false,
+    recovery_hint: 'The Bankr wallet did not sign, and nothing was sent. The message names the cause: a Bankr security setting, the Bankr API key, or the request. Fix that in Bankr, then retry.' },
   { test: /unauthor|missing api-token|forbidden|401/i, code: 'UNAUTHORIZED', is_retryable: false,
-    recovery_hint: 'Set HASHLOCK_TOKEN (a JWT) or HASHLOCK_EVM_KEY (0x private key for autonomous SIWE login) and retry.' },
+    recovery_hint: 'Set HASHLOCK_TOKEN (a JWT), or a wallet for autonomous SIWE login — HASHLOCK_EVM_KEY (0x private key) or HASHLOCK_BANKR_API_KEY (a Bankr wallet) — and retry.' },
   { test: /429|too many requests|rate.?limit/i, code: 'RATE_LIMITED', is_retryable: true,
     recovery_hint: 'Back off and retry after a short delay.' },
   { test: /(?:status|code|http|failed:?)\s*5\d{2}\b|\b5\d{2}\b\s*(?:internal server error|bad gateway|service unavailable|gateway timeout)|internal server error|bad gateway|service unavailable|gateway timeout|upstream|\brpc\b|econnreset|etimedout|fetch failed|network (?:error|request failed|timeout)/i, code: 'UPSTREAM_RPC_ERROR', is_retryable: true,

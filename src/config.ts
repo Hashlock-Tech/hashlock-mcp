@@ -3,19 +3,23 @@
  * performs the login (nonce → sign → JWT) with no human in the loop. Any ONE of:
  *  - HASHLOCK_TOKEN    — a ready JWT (copy from an authenticated session)
  *  - HASHLOCK_EVM_KEY  — 0x… 32-byte hex; SIWE (personal_sign) login, and signs EVM fund/claim
+ *  - HASHLOCK_BANKR_API_KEY — a Bankr API key, INSTEAD of HASHLOCK_EVM_KEY: the EVM wallet is the Bankr
+ *    wallet behind it, and Bankr's Wallet API signs for it (chains/bankr.ts)
  *  - HASHLOCK_TRON_KEY — 64-hex (TronLink-style); TRON signMessageV2 login, and signs TRON fund/claim
  *  - HASHLOCK_BTC_KEY  — WIF; BIP-322 login, and signs BTC HTLC claims
  *  - HASHLOCK_SOLANA_KEY — base58 (the 64-byte export a wallet gives, or a 32-byte seed). SIGNING
  *    ONLY, not a login: the server builds each Solana transaction and this key puts one signature in
  *    it. Set it alongside whichever key logs the agent in.
  * With none set, read-only tools (board/assets) still work; authed tools return UNAUTHORIZED.
- * The first configured key (EVM → TRON → BTC) is used for the login that mints the session JWT.
+ * The first configured wallet (EVM → TRON → BTC) is used for the login that mints the session JWT.
  */
 export interface Config {
   apiUrl: string;
   appUrl: string;
   token?: string;
   evmKey?: `0x${string}`;
+  /** The EVM wallet is a Bankr wallet; Bankr signs for it. Never set together with evmKey. */
+  bankrApiKey?: string;
   tronKey?: string; // 64-hex, no 0x
   btcKey?: string; // WIF
   solanaKey?: string; // base58, 32- or 64-byte
@@ -48,6 +52,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (evmKey && !/^0x[0-9a-fA-F]{64}$/.test(evmKey)) {
     throw new Error('HASHLOCK_EVM_KEY must be a 0x-prefixed 32-byte hex private key');
   }
+  const bankrApiKey = env.HASHLOCK_BANKR_API_KEY?.trim() || undefined;
+  // One EVM wallet per process: with both, which one logs in and funds would be decided by an `if`.
+  if (evmKey && bankrApiKey) throw new Error('set HASHLOCK_EVM_KEY or HASHLOCK_BANKR_API_KEY, not both — each names the EVM wallet');
   let tronKey = env.HASHLOCK_TRON_KEY?.trim();
   if (tronKey) {
     tronKey = tronKey.replace(/^0x/, '');
@@ -72,6 +79,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     appUrl,
     token: env.HASHLOCK_TOKEN?.trim() || undefined,
     evmKey: evmKey as `0x${string}` | undefined,
+    bankrApiKey,
     tronKey,
     btcKey,
     solanaKey,

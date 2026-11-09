@@ -17,6 +17,12 @@ config:
       description: >-
         0x private key for autonomous SIWE login — the server signs the login
         itself and re-authenticates on expiry. Use a dedicated key with only the funds you intend to trade.
+    HASHLOCK_BANKR_API_KEY:
+      type: "string"
+      title: "Bankr API key (instead of an EVM private key)"
+      description: >-
+        The EVM wallet is the Bankr wallet behind this key; Bankr's Wallet API signs for it.
+        Do not set together with HASHLOCK_EVM_KEY.
     HASHLOCK_TRON_KEY:
       type: "string"
       title: "Agent TRON private key"

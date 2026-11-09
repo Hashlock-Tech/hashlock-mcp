@@ -36,6 +36,12 @@
           "name": "HASHLOCK_EVM_KEY"
         },
         {
+          "description": "Bankr API key, instead of HASHLOCK_EVM_KEY: the EVM wallet is the Bankr wallet, Bankr signs",
+          "isRequired": false,
+          "isSecret": true,
+          "name": "HASHLOCK_BANKR_API_KEY"
+        },
+        {
           "description": "TRON private key (64-hex) for autonomous login + TRON settlement",
           "isRequired": false,
           "isSecret": true,

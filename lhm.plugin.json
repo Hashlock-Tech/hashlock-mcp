@@ -406,7 +406,7 @@
     },
     {
       "name": "fund_leg",
-      "description": "AUTONOMOUS SETTLEMENT: fund YOUR side of an agreed swap on-chain, signing with the agent's own key (HASHLOCK_EVM_KEY / TRON / BTC / SOLANA for that leg's chain). Funds the leg you give — approves the token (EVM/TRON) and locks it in the HTLC, pays the P2WSH (BTC), or signs the escrow transaction the server builds (Solana). Prerequisites: the deal is agreed and BOTH parties have set their settlement addresses (set_settlement_address). Returns the on-chain tx id. Fund your long leg first if you are the initiator.",
+      "description": "AUTONOMOUS SETTLEMENT: fund YOUR side of an agreed swap on-chain, signing with the agent's own wallet (HASHLOCK_EVM_KEY or a Bankr wallet via HASHLOCK_BANKR_API_KEY / the TRON, BTC or SOLANA key for that leg's chain). Funds the leg you give — approves the token (EVM/TRON) and locks it in the HTLC, pays the P2WSH (BTC), or signs the escrow transaction the server builds (Solana). Prerequisites: the deal is agreed and BOTH parties have set their settlement addresses (set_settlement_address). Returns the on-chain tx id. Fund your long leg first if you are the initiator.",
       "inputSchema": {
         "type": "object",
         "properties": {

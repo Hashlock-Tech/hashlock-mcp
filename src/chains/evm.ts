@@ -9,7 +9,7 @@ import {
   toHex,
   type Address,
 } from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
+import type { LocalAccount } from 'viem/accounts';
 import type { OnchainEscrow } from '../settlement.js';
 
 /**
@@ -161,10 +161,8 @@ export interface EvmChain {
 }
 
 export class EvmSigner {
-  readonly account;
-  constructor(privateKey: `0x${string}`) {
-    this.account = privateKeyToAccount(privateKey);
-  }
+  /** The wallet: a local key, or one that signs elsewhere (chains/bankr.ts). Everything below is the same for both. */
+  constructor(readonly account: LocalAccount) {}
   get address(): Address {
     return this.account.address;
   }

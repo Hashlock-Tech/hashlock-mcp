@@ -1,4 +1,6 @@
 import { BtcSigner, type BtcChain } from './chains/btc.js';
+import { privateKeyToAccount } from 'viem/accounts';
+import { bankrAccount } from './chains/bankr.js';
 import { EvmSigner, type EvmChain } from './chains/evm.js';
 import { SolanaSigner } from './chains/solana.js';
 import { TronSigner, type TronChain } from './chains/tron.js';
@@ -40,8 +42,9 @@ export interface ChainConfig {
 
 /**
  * Thin typed client for the Hashlock Markets REST API.
- * Auth: a static JWT (HASHLOCK_TOKEN), or autonomous SIWE login with HASHLOCK_EVM_KEY —
- * the client fetches a nonce, signs it locally (personal_sign) and exchanges it for a JWT.
+ * Auth: a static JWT (HASHLOCK_TOKEN), or autonomous SIWE login with the EVM wallet (HASHLOCK_EVM_KEY,
+ * or a Bankr wallet through HASHLOCK_BANKR_API_KEY) — the client fetches a nonce, has the wallet sign it
+ * (personal_sign) and exchanges it for a JWT.
  * On a 401 with a key present it re-logs-in once and retries (JWTs expire).
  */
 
@@ -216,12 +219,17 @@ export class HashlockClient {
   }
   private chainCfg: ChainConfig | null = null;
 
-  private get hasKey(): boolean {
-    return !!(this.cfg.evmKey || this.cfg.tronKey || this.cfg.btcKey || this.cfg.solanaKey);
+  /** Whether this process has an EVM wallet: a local key, or a Bankr wallet that signs for it. */
+  get hasEvmWallet(): boolean {
+    return !!(this.cfg.evmKey || this.cfg.bankrApiKey);
   }
-  evmSigner(): EvmSigner {
-    if (!this.cfg.evmKey) throw new Error('HASHLOCK_EVM_KEY not set');
-    return (this._evm ??= new EvmSigner(this.cfg.evmKey));
+  private get hasKey(): boolean {
+    return !!(this.hasEvmWallet || this.cfg.tronKey || this.cfg.btcKey || this.cfg.solanaKey);
+  }
+  /** Async because a Bankr wallet's address is Bankr's to tell (GET /wallet/me), asked once. */
+  async evmSigner(): Promise<EvmSigner> {
+    if (!this.hasEvmWallet) throw new Error('no EVM wallet — set HASHLOCK_EVM_KEY or HASHLOCK_BANKR_API_KEY');
+    return (this._evm ??= new EvmSigner(this.cfg.evmKey ? privateKeyToAccount(this.cfg.evmKey) : await bankrAccount(this.cfg.bankrApiKey!)));
   }
   tronSigner(): TronSigner {
     if (!this.cfg.tronKey) throw new Error('HASHLOCK_TRON_KEY not set');
@@ -310,7 +318,7 @@ export class HashlockClient {
   private async login(): Promise<void> {
     if (!this.hasKey) {
       throw new ApiError(
-        'unauthorized — set HASHLOCK_TOKEN, or a key for autonomous login: HASHLOCK_EVM_KEY / HASHLOCK_TRON_KEY / HASHLOCK_BTC_KEY / HASHLOCK_SOLANA_KEY',
+        'unauthorized — set HASHLOCK_TOKEN, or a wallet for autonomous login: HASHLOCK_EVM_KEY / HASHLOCK_BANKR_API_KEY / HASHLOCK_TRON_KEY / HASHLOCK_BTC_KEY / HASHLOCK_SOLANA_KEY',
         401,
       );
     }
@@ -321,8 +329,8 @@ export class HashlockClient {
     let message: string;
     let signature: string;
 
-    if (this.cfg.evmKey) {
-      const s = this.evmSigner();
+    if (this.hasEvmWallet) {
+      const s = await this.evmSigner();
       address = s.address;
       message = `Hashlock Markets wants you to sign in.\n\nAddress: ${address}\nNonce: ${nonce}\nIssued At: ${stamp}`;
       signature = await s.signLoginMessage(message);
@@ -552,7 +560,7 @@ export class HashlockClient {
         unusable[name] = `could not be read: ${(e as Error).message}`;
       }
     };
-    if (this.cfg.evmKey) await put('evm', () => this.evmSigner().address);
+    if (this.hasEvmWallet) await put('evm', async () => (await this.evmSigner()).address);
     if (this.cfg.tronKey) await put('tron', () => this.tronSigner().address);
     if (this.cfg.solanaKey) await put('solana', () => this.solanaSigner().address);
     if (this.cfg.btcKey) await put('btc', async () => (await this.btcSigner()).address);

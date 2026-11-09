@@ -60,7 +60,7 @@ To trade, add the agent's own key(s) — local stdio via `npx` (Claude Desktop /
       "args": ["-y", "@hashlock-tech/mcp"],
       "env": {
         "HASHLOCK_API_URL": "https://hashlock.markets/api",
-        "HASHLOCK_EVM_KEY": "0x<agent EVM key>",
+        "HASHLOCK_EVM_KEY": "0x<agent EVM key — or HASHLOCK_BANKR_API_KEY for a Bankr wallet>",
         "HASHLOCK_TRON_KEY": "<agent TRON key, 64-hex (optional)>",
         "HASHLOCK_BTC_KEY": "<agent BTC WIF (optional)>",
         "HASHLOCK_SOLANA_KEY": "<agent Solana key, base58 (optional)>"
@@ -78,6 +78,7 @@ The first configured key (EVM → TRON → BTC → Solana) mints the session; ea
 | Env var | Chain | Login |
 |---|---|---|
 | `HASHLOCK_EVM_KEY` | EVM | SIWE `personal_sign` |
+| `HASHLOCK_BANKR_API_KEY` | EVM, instead of `HASHLOCK_EVM_KEY` | SIWE `personal_sign`, signed by Bankr |
 | `HASHLOCK_TRON_KEY` | TRON | `signMessageV2` |
 | `HASHLOCK_BTC_KEY` | Bitcoin | BIP-322 |
 | `HASHLOCK_SOLANA_KEY` | Solana | ed25519 `signMessage` |
@@ -93,6 +94,16 @@ different Solana wallet, that link is left alone; nothing else is blocked, and `
 transactions this package does not build: the escrow's ADDRESS is a hash of the agreed terms, so the
 server composes each one and the agent signs the bytes it is handed. Set the agent's Solana address — `whoami` returns it as
 `localSigners.addresses.solana` — as its settlement address with `set_settlement_address` before funding.
+
+**A Bankr wallet as the EVM wallet.** A Bankr wallet has no key to export, so set `HASHLOCK_BANKR_API_KEY`
+(a Bankr API key with the Wallet API enabled, read-only off, "Enable arbitrary contract calls" on, and no
+allowed or permitted recipients) instead of `HASHLOCK_EVM_KEY`. The server still builds
+every transaction itself, prices and numbers it against your RPC and broadcasts it there. Bankr's
+`POST /wallet/sign` is asked only for the signature, and the signed transaction is used only if it is exactly
+the transaction built here, signed by that wallet — otherwise nothing is sent. A claim and a refund need that
+signature too, so leave the wallet unpaused and those settings as they are until every swap is settled or
+refunded. Bankr documents its spending
+limits for transactions it submits, not for ones it only signs: keep in the wallet what you mean to trade.
 
 With none set, read-only tools (`list_assets`, `list_open_rfqs`, `get_rfq`) still work. Use a dedicated key with only the funds you intend to trade.
 

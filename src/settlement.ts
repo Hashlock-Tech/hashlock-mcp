@@ -209,7 +209,8 @@ export async function verifyReceiveEscrow(
   const fam = await api.familyOf(view.chain);
   if (fam === 'evm') {
     const n = await evmNet(api, view.chain);
-    mine = [...own(() => api.evmSigner().address), ...set].map((a) => a.toLowerCase());
+    // Asked, not caught: a Bankr wallet that cannot be reached is an error, not "no wallet here".
+    mine = [...(api.hasEvmWallet ? [(await api.evmSigner()).address] : []), ...set].map((a) => a.toLowerCase());
     token = pinnedToken(n.rail, asset, 'evm');
     e = await readEvmEscrow(n, view.htlcAddress as `0x${string}`, swap.id, feeForLeg(swap, view.assetId), n.rail[contracts]);
     key = `${n.chainId}:${view.htlcAddress.toLowerCase()}`;
@@ -346,7 +347,7 @@ export async function fundMyLeg(
     const n = await evmNet(api, view.chain);
     assertPinned(n.rail.fund, n.factory, 'an HTLC factory', true);
     const token = pinnedToken(n.rail, asset, 'evm');
-    const signer = api.evmSigner();
+    const signer = await api.evmSigner();
     const terms = { swapId: swap.id, hashlockHex: hashlock, recipient: view.payout as `0x${string}`, token: token as `0x${string}` | null, amount: BigInt(view.amount), timelockUnix: view.timelockUnix, initiator: signer.address, fee };
     if (await cloneExists(n, terms)) throw new Error(`your ${view.chain} escrow for this swap already exists — not funding it again`);
     commit();
@@ -445,7 +446,7 @@ export async function claimMyLeg(
   let tx: string;
   if (fam === 'evm') {
     if (!view.htlcAddress) throw new Error('EVM clone address unknown (leg not funded yet)');
-    tx = await api.evmSigner().claim(await evmNet(api, view.chain), view.htlcAddress as `0x${string}`, secretHex);
+    tx = await (await api.evmSigner()).claim(await evmNet(api, view.chain), view.htlcAddress as `0x${string}`, secretHex);
   } else if (fam === 'tron') {
     const { rail } = await tronNet(api);
     const chain = await api.tronChain();
@@ -494,7 +495,7 @@ export async function refundMyLeg(api: HashlockClient, swap: Swap): Promise<{ tx
 
   if (fam === 'evm') {
     if (!view.htlcAddress) throw new Error('EVM clone address unknown (leg not funded yet)');
-    const tx = await api.evmSigner().refund(await evmNet(api, view.chain), view.htlcAddress as `0x${string}`);
+    const tx = await (await api.evmSigner()).refund(await evmNet(api, view.chain), view.htlcAddress as `0x${string}`);
     return { tx, leg: view.leg, chain: view.chain };
   }
   if (fam === 'tron') {
