@@ -41,6 +41,16 @@ const factoryAbi = [
 const erc20Abi = [
   {
     type: 'function',
+    name: 'allowance',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'owner', type: 'address' },
+      { name: 'spender', type: 'address' },
+    ],
+    outputs: [{ type: 'uint256' }],
+  },
+  {
+    type: 'function',
     name: 'approve',
     stateMutability: 'nonpayable',
     inputs: [
@@ -137,13 +147,13 @@ export async function readEvmEscrow(
 }
 
 /**
- * Whether the clone `fund` would create already exists: the factory derives its address from these very
+ * The clone `fund` would create, and whether it exists: the factory derives its address from these very
  * terms, so code there means this leg was funded already (a retry must not pay it again).
  */
-export async function cloneExists(
+export async function predictEscrow(
   chain: Pick<EvmChain, 'rpcUrl' | 'factory'>,
   p: { swapId: string; hashlockHex: string; recipient: Address; token: Address | null; amount: bigint; timelockUnix: number; initiator: Address; fee: bigint },
-): Promise<boolean> {
+): Promise<{ address: Address; exists: boolean }> {
   const pub = createPublicClient({ transport: http(chain.rpcUrl) });
   const at = await pub.readContract({
     address: chain.factory,
@@ -152,7 +162,7 @@ export async function cloneExists(
     args: [keccak256(toHex(p.swapId)), `0x${p.hashlockHex}`, p.recipient, p.token ?? ZERO, p.amount, BigInt(p.timelockUnix), p.initiator, p.fee],
   });
   const code = await pub.getCode({ address: at });
-  return !!code && code !== '0x';
+  return { address: at, exists: !!code && code !== '0x' };
 }
 
 export interface EvmChain {
@@ -239,7 +249,17 @@ export class EvmSigner {
     const salt = keccak256(toHex(p.swapId));
     const token = p.token ?? ZERO;
     if (p.token) {
-      await this.send(chain, { to: p.token, data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [chain.factory, p.amount + p.fee] }) });
+      // An approval a failed attempt left behind is reused when it covers the total, and zeroed first when it
+      // does not: USDT-style tokens refuse approve(non-zero) over a non-zero allowance, which would make the
+      // retry fail for ever (the web's fundEvmLeg does the same).
+      const total = p.amount + p.fee;
+      const approve = (v: bigint) => this.send(chain, { to: p.token!, data: encodeFunctionData({ abi: erc20Abi, functionName: 'approve', args: [chain.factory, v] }) });
+      const pub = createPublicClient({ transport: http(chain.rpcUrl) });
+      const allowance = await pub.readContract({ address: p.token, abi: erc20Abi, functionName: 'allowance', args: [this.address, chain.factory] });
+      if (allowance < total) {
+        if (allowance > 0n) await approve(0n);
+        await approve(total);
+      }
     }
     const data = encodeFunctionData({
       abi: factoryAbi,

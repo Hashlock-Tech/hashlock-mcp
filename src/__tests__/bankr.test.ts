@@ -35,6 +35,8 @@ const submitted: { transaction: Record<string, unknown>; waitForConfirmation?: b
 /** The node refuses the gas estimate from this call number on (1-based); 0 = never. */
 let revertFrom = 0;
 let receiptStatus = '0x1';
+/** What the token answers to allowance(owner, factory): an approval an earlier attempt left behind. */
+let allowanceNow = 0n;
 const estimated: unknown[] = [];
 /** What each hash was, as the node saw it: who sent it, and to which contract. */
 const mined = new Map<string, { from: string; to: string }>();
@@ -58,6 +60,8 @@ beforeAll(async () => {
           case 'eth_estimateGas':
             estimated.push(q.params[0]);
             return revertFrom && estimated.length >= revertFrom ? { jsonrpc: '2.0', id: q.id, error: { code: 3, message: 'execution reverted: NotInitiator' } } : ok('0xc350');
+          case 'eth_call':
+            return ok(`0x${allowanceNow.toString(16).padStart(64, '0')}`);
           case 'eth_maxPriorityFeePerGas':
             return ok('0x3b9aca00');
           case 'eth_blockNumber':
@@ -118,6 +122,7 @@ afterEach(() => {
   solanaOnly = false;
   revertFrom = 0;
   receiptStatus = '0x1';
+  allowanceNow = 0n;
   submitted.length = 0;
   estimated.length = 0;
   broadcast.length = 0;
@@ -157,6 +162,22 @@ describe('a Bankr wallet as the EVM wallet', () => {
     const create = decode(submitted[1].transaction.data);
     expect(create.functionName).toBe('createSwap');
     expect(create.args?.slice(1)).toEqual([`0x${'ab'.repeat(32)}`, getAddress(PAYEE), getAddress(TOKEN), 5_000_000n, 1_800_000_000n, bankrKey.address, 15_000n]);
+  });
+
+  it('reuses an approval a failed attempt left when it covers the total — a retry sends createSwap alone', async () => {
+    allowanceNow = 5_015_000n;
+    await (await signer()).fund(chain(), terms(TOKEN));
+    expect(submitted.map((s) => decode(s.transaction.data).functionName)).toEqual(['createSwap']);
+  });
+
+  it('zeroes an approval that falls short before approving the total, as USDT refuses non-zero over non-zero', async () => {
+    allowanceNow = 1n;
+    await (await signer()).fund(chain(), terms(TOKEN));
+    expect(submitted.map((s) => decode(s.transaction.data))).toMatchObject([
+      { functionName: 'approve', args: [getAddress(FACTORY), 0n] },
+      { functionName: 'approve', args: [getAddress(FACTORY), 5_015_000n] },
+      { functionName: 'createSwap' },
+    ]);
   });
 
   it('funds a native leg as one createSwap carrying the amount and the fee', async () => {

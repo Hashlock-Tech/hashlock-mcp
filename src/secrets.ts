@@ -224,9 +224,23 @@ export class AgreementStore {
   }
 
   /**
-   * Take `key` once: the first call records it, every later one is refused. A swap's own leg is funded by
-   * this process at most once — whatever terms the API reports on a retry, since a changed term is a new
-   * escrow address that no on-chain "already funded" check would find.
+   * `key` stands for ONE set of terms, `terms`: an attempt on the same terms passes (a retry after a failure),
+   * an attempt on other terms is refused. A record written before this existed holds a time, not terms, so it
+   * keeps refusing as takeOnce did.
+   */
+  pin(key: string, terms: string, what: string): void {
+    const f = this.load();
+    const had = f.relied[key];
+    if (had && had !== terms) throw new Error(`${what} was already sent once on other terms (or by a version that recorded no terms) — check the chain, or settle it in the web app`);
+    if (had) return;
+    f.relied[key] = terms;
+    writeJson(this.path, f);
+  }
+
+  /**
+   * Take `key` once: the first call records it, every later one is refused. A Bitcoin or Solana leg is
+   * funded by this process at most once — whatever terms the API reports on a retry, since a Bitcoin address
+   * takes any number of payments and a Solana leg is built by the server. EVM and TRON legs use pin().
    */
   takeOnce(key: string, what: string): void {
     const f = this.load();

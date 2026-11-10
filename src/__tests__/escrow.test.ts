@@ -46,7 +46,11 @@ function net(routes: {
     const body = init?.body ? JSON.parse(String(init.body)) : null;
     const json = (v: unknown) => new Response(JSON.stringify(v));
     if (body?.method === 'eth_chainId') return json({ jsonrpc: '2.0', id: body.id, result: `0x${(routes.evmChainId ?? 1).toString(16)}` });
-    if (body?.method === 'eth_call') return json({ jsonrpc: '2.0', id: body.id, result: `0x${'00'.repeat(12)}${'99'.repeat(20)}` });
+    // The factory's computeAddress: a different address for different terms, as CREATE2 gives.
+    if (body?.method === 'eth_call') {
+      const at = createHash('sha256').update(String(body.params?.[0]?.data)).digest('hex').slice(0, 40);
+      return json({ jsonrpc: '2.0', id: body.id, result: `0x${'00'.repeat(12)}${at}` });
+    }
     if (body?.method === 'eth_getCode') return json({ jsonrpc: '2.0', id: body.id, result: routes.evmCode ?? '0x' });
     if (body?.method === 'getGenesisHash') return json({ jsonrpc: '2.0', id: 1, result: routes.solanaGenesis });
     if (body?.method === 'getAccountInfo') return json({ jsonrpc: '2.0', id: 1, result: { value: routes.solanaAccount ? { owner: 'x', data: ['', 'base64'] } : null } });
@@ -175,7 +179,7 @@ const dealSwap = (over: Partial<Record<string, unknown>> = {}) =>
     ...over,
   }) as unknown as Swap;
 const meApi = { me: async () => ({ user: { id: 'me' } }) };
-const store = (a: Agreement | null = agreement, addresses: string[] = []) => ({ get: () => a, rely: vi.fn(), addressesFor: () => addresses, takeOnce: vi.fn() });
+const store = (a: Agreement | null = agreement, addresses: string[] = []) => ({ get: () => a, rely: vi.fn(), addressesFor: () => addresses, takeOnce: vi.fn(), pin: vi.fn() });
 
 describe('checkDeal: the swap is what the agent agreed to', () => {
   const check = (swap: Swap, a: Agreement | null = agreement) => checkDeal(meApi as unknown as HashlockClient, swap, store(a));
@@ -505,6 +509,18 @@ describe('fundMyLeg as the counterparty: the initiator escrow is checked on chai
     await expect(fundMyLeg(api(), swap(), none, store(makerAgreement))).rejects.toThrow(/already exists — not funding it again/);
   });
 
+  it('funds again after a signer that failed — on the same terms only, which the chain lets through once', async () => {
+    net({ evmChainId: 1, esplora: { confirmed: 600 } });
+    const { agreements } = tmpStore();
+    const real = { ...store(makerAgreement), pin: (k: string, t: string, w: string) => agreements.pin(k, t, w) };
+    evmFund.mockRejectedValueOnce(new Error('insufficient funds for gas'));
+    await expect(fundMyLeg(api(), swap(), none, real)).rejects.toThrow(/insufficient funds/);
+    await expect(fundMyLeg(api(), swap(), none, real)).resolves.toMatchObject({ tx: '0xtx' }); // topped up, retried
+    // Other terms are another escrow at another address, which the chain would let both exist.
+    const earlier = swap({ aTimelock: new Date((bTl - MIN_TIMELOCK_GAP_SECONDS - 60) * 1000).toISOString() });
+    await expect(fundMyLeg(api(), earlier, none, real)).rejects.toThrow(/already sent once on other terms/);
+  });
+
   it('refuses a swap row rewritten after the agreement', async () => {
     net({ evmChainId: 1, esplora: { confirmed: 600 } });
     await expect(fundMyLeg(api(), swap({ aAmount: '1001' }), none, store(makerAgreement))).rejects.toThrow(/not a price this agent agreed to/);
@@ -550,7 +566,7 @@ describe('fundMyLeg as the initiator', () => {
   it('refuses a leg about to expire, a hashlock already funded for another swap, and an escrow already paid', async () => {
     await expect(fundMyLeg(api, sw({ bTimelock: new Date((now() + 600) * 1000).toISOString() }), mine, store())).rejects.toThrow(/minutes away/);
     const { agreements } = tmpStore();
-    const real = { get: () => agreement, rely: (k: string, id: string) => agreements.rely(k, id), addressesFor: () => [], takeOnce: (k: string, w: string) => agreements.takeOnce(k, w) };
+    const real = { get: () => agreement, rely: (k: string, id: string) => agreements.rely(k, id), addressesFor: () => [], takeOnce: (k: string, w: string) => agreements.takeOnce(k, w), pin: (k: string, t: string, w: string) => agreements.pin(k, t, w) };
     agreements.rely(`hashlock:${H}`, 'an-earlier-swap');
     net({ esplora: { confirmed: 0 } });
     await expect(fundMyLeg(api, sw(), mine, real)).rejects.toThrow(/already backs swap an-earlier-swap/);

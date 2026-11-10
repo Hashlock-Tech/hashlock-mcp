@@ -1,7 +1,7 @@
 import * as bitcoin from 'bitcoinjs-lib';
 import type { BtcLegTx, HashlockClient, Swap } from './client.js';
 import { esploraAddressStats, htlcScript, readBtcEscrow } from './chains/btc.js';
-import { cloneExists, readEvmEscrow } from './chains/evm.js';
+import { predictEscrow, readEvmEscrow } from './chains/evm.js';
 import { readSolanaEscrow, solanaAccountExists, type SolanaPin } from './chains/solana.js';
 import { normHex as norm, sha256Hex, type AgreementStore, type AssetSnapshot, type SecretStore } from './secrets.js';
 import { assertPinned, btcNet, checkDeal, evmNet, pinnedToken, solanaNet, tronNet, type Deal } from './trust.js';
@@ -288,7 +288,7 @@ export async function fundMyLeg(
   api: HashlockClient,
   swap: Swap,
   secrets: Pick<SecretStore, 'findByHashlock' | 'markFunded'>,
-  agreements: Pick<AgreementStore, 'get' | 'rely' | 'addressesFor' | 'takeOnce'>,
+  agreements: Pick<AgreementStore, 'get' | 'rely' | 'addressesFor' | 'takeOnce' | 'pin'>,
 ): Promise<{ tx: string; leg: Leg; chain: string }> {
   const deal = await checkDeal(api, swap, agreements);
   const hashlock = norm(swap.hashlock);
@@ -334,11 +334,20 @@ export async function fundMyLeg(
   const fam = await api.familyOf(view.chain);
   // One leg of the agent's under one hashlock: revealing it to settle one deal would open every other
   // escrow under it, so a second swap reusing it is refused. Checked and recorded at the last moment —
-  // right before the signer sends — so a funding refused by any check leaves both free. A signer that
-  // fails after it (an empty wallet, a wallet that refuses the call) leaves them taken, and this server
-  // does not fund that swap again: it cannot tell for certain that nothing left.
-  const commit = () => {
-    agreements.takeOnce(`funded:${swap.id}`, `funding of your ${view.chain} leg of swap ${swap.id}`);
+  // right before the signer sends — so a funding refused by any check leaves both free.
+  //
+  // WHETHER THIS SWAP MAY BE FUNDED AGAIN after a signer failed (an empty wallet, an RPC that dropped, a
+  // wallet that refused the call) depends on the chain, because this server cannot tell for certain that
+  // nothing left. On EVM and TRON the chain itself allows ONE escrow per set of terms — the factory deploys
+  // the clone at an address derived from all of them, and the TRON pool keys its slot on the swap, the funder,
+  // the token and the fee, refusing a second funding of it — so a second attempt on the SAME terms either
+  // creates the escrow the first did not, or is refused on chain having moved nothing. `terms` is what the
+  // record holds there, and only an attempt on other terms is refused. A Bitcoin address takes any number of
+  // payments and a Solana leg is built by the server, so there the swap is funded once, whatever stopped it.
+  const commit = (terms?: string) => {
+    const what = `funding of your ${view.chain} leg of swap ${swap.id}`;
+    if (terms) agreements.pin(`funded:${swap.id}`, terms, what);
+    else agreements.takeOnce(`funded:${swap.id}`, what);
     agreements.rely(`hashlock:${hashlock}`, swap.id);
     if (iAmInitiator) secrets.markFunded(swap.threadId, hashlock, swap.id);
   };
@@ -349,8 +358,9 @@ export async function fundMyLeg(
     const token = pinnedToken(n.rail, asset, 'evm');
     const signer = await api.evmSigner();
     const terms = { swapId: swap.id, hashlockHex: hashlock, recipient: view.payout as `0x${string}`, token: token as `0x${string}` | null, amount: BigInt(view.amount), timelockUnix: view.timelockUnix, initiator: signer.address, fee };
-    if (await cloneExists(n, terms)) throw new Error(`your ${view.chain} escrow for this swap already exists — not funding it again`);
-    commit();
+    const escrow = await predictEscrow(n, terms);
+    if (escrow.exists) throw new Error(`your ${view.chain} escrow for this swap already exists — not funding it again`);
+    commit(`${view.chain}:${escrow.address.toLowerCase()}`); // the clone's address is a hash of every term
     const tx = await signer.fund(n, {
       swapId: swap.id,
       hashlockHex: hashlock,
@@ -373,7 +383,9 @@ export async function fundMyLeg(
     const token = pinnedToken(rail, asset, 'tron');
     const signer = api.tronSigner();
     if (await signer.fundedSlot(chain, chain.sharedHtlc, swap.id, token, fee)) throw new Error('your TRON escrow for this swap already exists — not funding it again');
-    commit();
+    // The slot is keyed on fewer terms than the escrow holds, so the record names every one of them — the
+    // funding wallet too: the slot is that wallet's, so under another key the check above finds nothing.
+    commit(['tron', chain.sharedHtlc, signer.address, token ?? 'TRX', view.payout, view.amount, fee.toString(), hashlock, view.timelockUnix].join(':'));
     const tx = await signer.fund(chain, {
       swapId: swap.id,
       recipient: view.payout,

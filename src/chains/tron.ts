@@ -63,6 +63,16 @@ const sharedAbi = [
 const erc20Abi = [
   {
     type: 'function',
+    name: 'allowance',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'owner', type: 'address' },
+      { name: 'spender', type: 'address' },
+    ],
+    outputs: [{ type: 'uint256' }],
+  },
+  {
+    type: 'function',
     name: 'approve',
     stateMutability: 'nonpayable',
     inputs: [
@@ -137,7 +147,13 @@ export class TronSigner {
       return shared.fund(...args).send({ feeLimit: FEE_LIMIT, callValue: Number(total) });
     }
     const token = tw.contract(erc20Abi as unknown as never[], p.token);
-    await token.approve(chain.sharedHtlc, total.toString()).send({ feeLimit: FEE_LIMIT });
+    // Reused when it covers the total and zeroed first when it does not, as on EVM: a retry must not fail on a
+    // token that refuses approve(non-zero) over the non-zero allowance a failed attempt left.
+    const allowance = BigInt(String(await token.allowance(this.address, chain.sharedHtlc).call()));
+    if (allowance < total) {
+      if (allowance > 0n) await token.approve(chain.sharedHtlc, '0').send({ feeLimit: FEE_LIMIT });
+      await token.approve(chain.sharedHtlc, total.toString()).send({ feeLimit: FEE_LIMIT });
+    }
     return shared.fund(...args).send({ feeLimit: FEE_LIMIT });
   }
 
