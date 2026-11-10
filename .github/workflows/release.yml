@@ -58,3 +58,30 @@ jobs:
           node-version: 24.18.0
           registry-url: https://registry.npmjs.org
       - run: npm publish *.tgz --provenance --access public
+
+  # The GitHub Releases page is where people look first, and it used to be filled in by hand: 1.12.0 and 1.12.1
+  # went to npm and the MCP Registry while the page still called 1.11.1 the latest (2026-11-10). After npm took
+  # the package, the tag gets its release here too — a pre-release tag (x.y.z-…) marked as one, a stable one as
+  # the latest unless a newer one exists. A release that already exists for the tag is left as it is, so a re-run
+  # does not fail.
+  github-release:
+    name: GitHub release
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then echo "release $TAG already exists"; exit 0; fi
+          case "$TAG" in
+            *-*) gh release create "$TAG" --verify-tag --generate-notes --prerelease ;;
+            # Latest only if no newer stable release exists — a hotfix of an older line (1.11.2 after 1.12.1) must
+            # not take the badge, the same rule mcp-registry-deprecate.yml keeps by sort -V.
+            *) CUR=$(gh release view --json tagName -q .tagName 2>/dev/null || true)
+               if [ -z "$CUR" ] || [ "$(printf '%s\n%s\n' "$CUR" "$TAG" | sort -V | tail -1)" = "$TAG" ]; then L=--latest; else L=--latest=false; fi
+               gh release create "$TAG" --verify-tag --generate-notes "$L" ;;
+          esac
