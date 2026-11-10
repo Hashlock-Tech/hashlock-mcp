@@ -1,3 +1,5 @@
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { describe, expect, it } from 'vitest';
 import { createHttpApp } from './server.js';
 
@@ -10,6 +12,38 @@ const post = (body: string, headers: Record<string, string> = {}) =>
     headers: { authorization: 'Bearer x', 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...headers },
   });
 const filler = (chars: number) => `{"jsonrpc":"2.0","id":1,"method":"ping","params":{"x":"${'a'.repeat(chars)}"}}`;
+
+describe('a key that /v1 has accepted', () => {
+  it('leaves the address bucket for one of its own — the wiring between a tool call and the limiter', async () => {
+    // A /v1 that accepts every key, and a limit of 2 a minute.
+    const v1 = createServer((_req, res) => void res.writeHead(200, { 'content-type': 'application/json' }).end('{"userId":"u","scopes":[]}'));
+    await new Promise<void>((r) => v1.listen(0, '127.0.0.1', r));
+    const before = process.env.MCP_RATE_LIMIT_MAX;
+    process.env.MCP_RATE_LIMIT_MAX = '2';
+    const strict = createHttpApp({ v1Url: `http://127.0.0.1:${(v1.address() as AddressInfo).port}/v1` });
+    if (before === undefined) delete process.env.MCP_RATE_LIMIT_MAX;
+    else process.env.MCP_RATE_LIMIT_MAX = before;
+    const from = (token: string, body: string) =>
+      strict.request('/mcp', {
+        method: 'POST',
+        body,
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'x-forwarded-for': '3.3.3.3' },
+      });
+    const ping = '{"jsonrpc":"2.0","id":1,"method":"ping"}';
+    try {
+      // The address's first request: a tool call that /v1 answers 200.
+      const whoami = await from('hk_live', '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"whoami","arguments":{}}}');
+      expect(whoami.status).toBe(200);
+      await whoami.text(); // the tool has run by the time its answer is read
+      expect((await from('invented-1', ping)).status).toBe(200); // the address's second
+      expect((await from('invented-2', ping)).status).toBe(429); // the address is spent …
+      expect((await from('hk_live', ping)).status).toBe(200); // … and the accepted key is not counted with it
+    } finally {
+      v1.closeAllConnections();
+      v1.close();
+    }
+  });
+});
 
 describe('request body limit on /mcp', () => {
   const over = filler(1024 * 1024);

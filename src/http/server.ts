@@ -3,7 +3,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
-import { rateLimit } from './rate-limit.js';
+import { keyAnswered, rateLimit } from './rate-limit.js';
 import { registerHostedTools } from './tools.js';
 import { makeCallV1 } from './v1-client.js';
 
@@ -38,7 +38,7 @@ export function createHttpApp(opts: HttpServerOptions): Hono {
   app.use('/mcp', cors({ origin: '*', allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'], allowHeaders: ['Content-Type', 'Authorization', 'Mcp-Session-Id'], exposeHeaders: ['Mcp-Session-Id'] }));
 
   // Bound the public endpoint itself. /v1 limits per API key downstream, but that only helps once a
-  // credential is presented — this sits in front of that.
+  // credential is presented — this sits in front of that. Per address, until /v1 has accepted the key.
   app.use('/mcp', rateLimit({ windowMs: 60_000, max: Number(process.env.MCP_RATE_LIMIT_MAX ?? 240) }));
 
   // No request body is read past 1 MB. Anything after "Bearer " reaches the transport — the key is only
@@ -70,7 +70,12 @@ export function createHttpApp(opts: HttpServerOptions): Hono {
 
     // Fresh per-request server + transport (stateless). Tools proxy to /v1 with THIS caller's key.
     const server = new McpServer({ name: opts.name ?? 'hashlock', version: opts.version ?? '0.0.0' });
-    registerHostedTools(server, makeCallV1(opts.v1Url, token));
+    const callV1 = makeCallV1(opts.v1Url, token);
+    registerHostedTools(server, async (path, init) => {
+      const r = await callV1(path, init);
+      keyAnswered(token, r.status); // what earns this key a rate-limit bucket of its own, or loses it
+      return r;
+    });
 
     const transport = new StreamableHTTPTransport();
     await server.connect(transport);
