@@ -1,6 +1,7 @@
 import { StreamableHTTPTransport } from '@hono/mcp';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
 import { rateLimit } from './rate-limit.js';
 import { registerHostedTools } from './tools.js';
@@ -25,6 +26,9 @@ export interface HttpServerOptions {
   version?: string;
 }
 
+/** The most messages one POST may carry. */
+const MAX_BATCH = 16;
+
 const bearer = (h: string | undefined): string | undefined =>
   h?.startsWith('Bearer ') ? h.slice(7).trim() : undefined;
 
@@ -36,6 +40,13 @@ export function createHttpApp(opts: HttpServerOptions): Hono {
   // Bound the public endpoint itself. /v1 limits per API key downstream, but that only helps once a
   // credential is presented — this sits in front of that.
   app.use('/mcp', rateLimit({ windowMs: 60_000, max: Number(process.env.MCP_RATE_LIMIT_MAX ?? 240) }));
+
+  // No request body is read past 1 MB. Anything after "Bearer " reaches the transport — the key is only
+  // checked by /v1, when a tool runs — so without this an anonymous caller chose how much this process
+  // buffers and parses. 1 MB is what the API behind it accepts: the largest call is a raw Bitcoin
+  // transaction in hex, at most 800 000 characters. After the limiter, so a caller over its rate is
+  // answered 429 without its body being read.
+  app.use('/mcp', bodyLimit({ maxSize: 1024 * 1024, onError: (c) => c.json({ error: 'request body too large' }, 413) }));
 
   app.get('/health', (c) => c.json({ status: 'ok', service: 'hashlock-mcp-http', ts: new Date().toISOString() }));
 
@@ -50,13 +61,20 @@ export function createHttpApp(opts: HttpServerOptions): Hono {
       return c.json({ error: 'authorization required — connect through your MCP client, or use a key from /developers' }, 401);
     }
 
+    // A JSON-RPC batch is one request to the limiter and one body to the limit above, and as many calls
+    // as it holds: 20 000 `tools/list` fit in 1 MB, and answering them took this process to 2465 MB and
+    // sent 762 MB back (measured). The body is read here, once, and handed to the transport as read.
+    // Batching left MCP in 2025-06-18; MAX_BATCH is room for a client still on the revision that had it.
+    const body: unknown = c.req.method === 'POST' ? await c.req.json().catch(() => undefined) : undefined;
+    if (Array.isArray(body) && body.length > MAX_BATCH) return c.json({ error: `a batch may hold at most ${MAX_BATCH} messages` }, 400);
+
     // Fresh per-request server + transport (stateless). Tools proxy to /v1 with THIS caller's key.
     const server = new McpServer({ name: opts.name ?? 'hashlock', version: opts.version ?? '0.0.0' });
     registerHostedTools(server, makeCallV1(opts.v1Url, token));
 
     const transport = new StreamableHTTPTransport();
     await server.connect(transport);
-    return transport.handleRequest(c);
+    return transport.handleRequest(c, body);
   });
 
   return app;
