@@ -83,3 +83,17 @@ describe('batch limit on /mcp', () => {
     expect(((await r.json()) as { error: { code: number } }).error.code).toBe(-32700);
   });
 });
+
+describe('GET /mcp', () => {
+  it('is refused with 405: a server with no state between requests has no stream to offer', async () => {
+    const r = await app.request('/mcp', { headers: { authorization: 'Bearer x', accept: 'text/event-stream' } });
+    expect(r.status).toBe(405);
+    expect(r.headers.get('allow')).toBe('POST, DELETE');
+  });
+
+  it('still asks a caller with no token to authorize first', async () => {
+    const r = await app.request('/mcp', { headers: { accept: 'text/event-stream' } });
+    expect(r.status).toBe(401);
+    expect(r.headers.get('www-authenticate')).toContain('Bearer');
+  });
+});

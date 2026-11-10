@@ -61,6 +61,15 @@ export function createHttpApp(opts: HttpServerOptions): Hono {
       return c.json({ error: 'authorization required — connect through your MCP client, or use a key from /developers' }, 401);
     }
 
+    // This server keeps nothing between requests, so it has nothing to send on the stream a client opens
+    // with GET — each one only held a server and a socket for as long as the client liked (240 of them,
+    // 138 MB). 405 is what the protocol has a server answer when it offers no such stream; clients go on
+    // without it.
+    if (c.req.method === 'GET') {
+      c.header('Allow', 'POST, DELETE');
+      return c.json({ jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed: this server offers no event stream' }, id: null }, 405);
+    }
+
     // A JSON-RPC batch is one request to the limiter and one body to the limit above, and as many calls
     // as it holds: 20 000 `tools/list` fit in 1 MB, and answering them took this process to 2465 MB and
     // sent 762 MB back (measured). The body is read here, once, and handed to the transport as read.
