@@ -77,6 +77,15 @@ describe('batch limit on /mcp', () => {
     expect((await post('{"jsonrpc":"2.0","id":1,"method":"ping"}')).status).toBe(200);
   });
 
+  it('refuses what is not a JSON-RPC message in one line, whatever it carries', async () => {
+    const junk = { jsonrpc: '2.0', id: 1, method: 'ping', ...Object.fromEntries(Array.from({ length: 5000 }, (_, i) => [`k${i}`, 1])) };
+    for (const body of [junk, [{ jsonrpc: '2.0', id: 1, method: 'ping' }, junk], null, 7, 'ping', [[]]]) {
+      const r = await post(JSON.stringify(body));
+      expect(r.status).toBe(400);
+      expect(await r.json()).toEqual({ jsonrpc: '2.0', error: { code: -32600, message: 'Invalid Request: not a JSON-RPC message' }, id: null });
+    }
+  });
+
   it('leaves a body that is not JSON to the transport, which reads it again and names the parse error', async () => {
     const r = await post('{not json');
     expect(r.status).toBe(400);

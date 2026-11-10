@@ -29,6 +29,11 @@ export interface HttpServerOptions {
 /** The most messages one POST may carry. */
 const MAX_BATCH = 16;
 
+/** Every member a JSON-RPC 2.0 message can have: a request, a notification, a result or an error. */
+const MEMBERS = new Set(['jsonrpc', 'id', 'method', 'params', 'result', 'error']);
+const isMessage = (m: unknown): boolean =>
+  typeof m === 'object' && m !== null && !Array.isArray(m) && Object.keys(m).every((k) => MEMBERS.has(k));
+
 const bearer = (h: string | undefined): string | undefined =>
   h?.startsWith('Bearer ') ? h.slice(7).trim() : undefined;
 
@@ -76,6 +81,12 @@ export function createHttpApp(opts: HttpServerOptions): Hono {
     // Batching left MCP in 2025-06-18; MAX_BATCH is room for a client still on the revision that had it.
     const body: unknown = c.req.method === 'POST' ? await c.req.json().catch(() => undefined) : undefined;
     if (Array.isArray(body) && body.length > MAX_BATCH) return c.json({ error: `a batch may hold at most ${MAX_BATCH} messages` }, 400);
+    // What is not a JSON-RPC message is refused here, in one line. The transport refuses it too, but by
+    // listing every member it did not expect, once per kind of message, and sending the list back: one
+    // message of 90 000 junk members, 978 930 bytes, was answered with 14 672 694. (A body that is not
+    // JSON at all is still the transport's to name.)
+    if (body !== undefined && !(Array.isArray(body) ? body : [body]).every(isMessage))
+      return c.json({ jsonrpc: '2.0', error: { code: -32600, message: 'Invalid Request: not a JSON-RPC message' }, id: null }, 400);
 
     // Fresh per-request server + transport (stateless). Tools proxy to /v1 with THIS caller's key.
     const server = new McpServer({ name: opts.name ?? 'hashlock', version: opts.version ?? '0.0.0' });
