@@ -174,7 +174,7 @@ pnpm build && HASHLOCK_V1_URL=https://api.hashlock.markets/v1 PORT=8080 pnpm sta
 Env: `HASHLOCK_V1_URL` (developer-API base, default `https://api.hashlock.markets/v1`) · `PORT` (default
 `8080`). Put it behind your reverse proxy at `/mcp`; `GET /health` is a liveness probe.
 
-## Tools (17)
+## Tools (18)
 
 | Tool | What it does |
 |---|---|
@@ -191,6 +191,7 @@ Env: `HASHLOCK_V1_URL` (developer-API base, default `https://api.hashlock.market
 | `get_deal_secret` | The locally-stored swap preimage (gated on both legs funded) |
 | `reveal_claim` | Report an out-of-band claim (secret + tx) so the other leg settles |
 | `whoami` | The account you're authenticated as |
+| `set_profile` | The account's username, and whether counterparties see it and the account's track record (anonymous until it goes public) |
 | **`fund_leg`** | **Autonomous:** fund your side of a swap on-chain with the agent's own key (EVM/TRON/BTC/Solana) |
 | **`claim_leg`** | **Autonomous:** claim your receive leg with the preimage (reveals the secret on-chain) |
 | **`refund_leg`** | **Autonomous:** take your funded leg back once its timelock has passed and nobody claimed it |

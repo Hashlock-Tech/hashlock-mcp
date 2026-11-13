@@ -140,6 +140,38 @@ describe('auth', () => {
   });
 });
 
+describe('setProfile', () => {
+  const client = () => new HashlockClient({ apiUrl: 'https://x', secretsPath: '/tmp/x.json', token: 't' });
+  it('PATCHes /me/profile with only what was given and answers the two fields, not the account row', async () => {
+    const fetchFn = mockFetch(() => ({ json: { user: { id: 'u1', evmAddress: '0xabc', handle: 'my_desk', handlePublic: true }, verified: [] } }));
+    expect(await client().setProfile({ handle: 'My_Desk', handlePublic: true })).toEqual({ handle: 'my_desk', handlePublic: true });
+    const [url, init] = fetchFn.mock.calls[0]!;
+    expect(url).toBe('https://x/me/profile');
+    expect(init!.method).toBe('PATCH');
+    expect(JSON.parse(init!.body as string)).toEqual({ handle: 'My_Desk', handlePublic: true });
+    await client().setProfile({ handlePublic: false });
+    expect(JSON.parse(fetchFn.mock.calls[1]![1]!.body as string)).toEqual({ handlePublic: false });
+  });
+  it('answers a nameless account as null / false', async () => {
+    mockFetch(() => ({ json: { user: { id: 'u1', handle: null, handlePublic: false } } }));
+    expect(await client().setProfile({ handle: null })).toEqual({ handle: null, handlePublic: false });
+  });
+  it("says the app's refusal codes in words, keeps the status, and leaves any other refusal as it came", async () => {
+    for (const [code, status, says] of [
+      ['invalid', 400, /3 to 24 characters/],
+      ['reserved', 400, /reserved/],
+      ['taken', 409, /another account/],
+      ['no_name', 400, /has no username/],
+      ['too many name changes — try again in an hour', 429, /^too many name changes/],
+    ] as const) {
+      mockFetch(() => ({ status, json: { error: code } }));
+      const e = await client().setProfile({ handle: 'x' }).catch((x: unknown) => x as { message: string; status: number });
+      expect((e as { message: string }).message, code).toMatch(says);
+      expect((e as { status: number }).status, code).toBe(status);
+    }
+  });
+});
+
 /**
  * The retry-vs-settled split, which is where a High got in: a `fetch failed` TypeError is not an
  * ApiError, so classing "not an ApiError" as settled cached a one-second blip as permanent and every

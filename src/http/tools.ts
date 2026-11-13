@@ -39,6 +39,7 @@ const THREAD = output({
 const SWAP = output({ id: s().describe('Swap id'), status: s(), secretCiphertext: ns().describe('Revealed secret, plain hex') });
 const threadSwap = { thread: THREAD, swap: SWAP.nullable().describe('Set once both accepted') };
 const OUT = {
+  profile: output({ handle: ns().describe('Username; null = none'), handlePublic: z.boolean().describe('Counterparties see the username and record') }),
   whoami: output({ userId: s(), scopes: z.array(s()), wallets: output({}).describe('Per chain: login and proven wallets') }),
   assets: output({ assets: z.array(output({ id: s(), chain: s(), symbol: s(), decimals: scalar() })) }),
   rfq: output({ rfq: RFQ }),
@@ -305,6 +306,20 @@ export function registerHostedTools(server: McpServer, callV1: CallV1): void {
     ann('Cancel your RFQ', WRITE, { destructiveHint: true, idempotentHint: true }),
     OUT.rfq,
     async ({ id }) => out(await callV1(`/rfqs/${id}/cancel`, { method: 'POST' })),
+  );
+
+  tool(
+    'set_profile',
+    "Set this account's username and whether the accounts it trades with see it (scope: taker or maker). " +
+      'An account is anonymous until it goes public. While it is public, every account it has a thread with — past deals included — sees its username and, beside it, its track record over ALL its swaps (deals, walk-aways, speed). ' +
+      'Send either field or both. handlePublic: false hides both again and keeps the username; handle: null removes the username, makes the account anonymous and frees the name for anyone. A username can be set ten times an hour, attempts refused as taken included. whoami shows the current handle and handlePublic.',
+    {
+      handle: z.string().nullable().optional().describe('Username: 3 to 24 characters, the letters a to z, digits and _ (stored in lowercase). null removes it'),
+      handlePublic: z.boolean().optional().describe('true: counterparties see the username and the track record (needs a username). false: anonymous'),
+    },
+    ann('Set username and visibility', WRITE, { destructiveHint: true, idempotentHint: true }),
+    OUT.profile,
+    async (a) => out(await callV1('/me/profile', { method: 'PATCH', body: a })),
   );
 
   tool(

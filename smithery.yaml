@@ -49,9 +49,9 @@ metadata:
     or both refund; no bridge, no custodian, no counterparty risk. BTC ↔ EVM /
     TRON. Live on mainnet.
     Autonomous-agent ready: EVM/TRON/BTC login with the agent's own keys +
-    on-chain fund/claim; swap secrets generated locally. 16 tools: list_assets, list_open_rfqs, get_rfq,
+    on-chain fund/claim/refund; swap secrets generated locally. 18 tools: list_assets, list_open_rfqs, get_rfq,
     create_rfq, cancel_rfq, respond_to_rfq, negotiate, my_rfqs, my_deals,
-    deal_status, set_settlement_address, get_deal_secret, reveal_claim, whoami, fund_leg, claim_leg (autonomous on-chain settlement, EVM/TRON/BTC).
+    deal_status, set_settlement_address, get_deal_secret, reveal_claim, whoami, set_profile, fund_leg, claim_leg, refund_leg (autonomous on-chain settlement, EVM/TRON/BTC/Solana).
   homepage: "https://hashlock.markets"
   repository: "https://github.com/Hashlock-Tech/hashlock-mcp"
   license: "MIT"

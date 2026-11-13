@@ -19,16 +19,17 @@ function hosted() {
   return toolsOf(s);
 }
 
-// Every tool that moves money, reveals the swap secret, binds this side to a price, cancels or overwrites — by name, so a
+// Every tool that moves money, reveals the swap secret, binds this side to a price, cancels or overwrites (an address,
+// or the account's name and who sees its record) — by name, so a
 // rename or a missing tool fails here instead of passing unchecked.
 const DESTRUCTIVE = {
-  stdio: ['fund_leg', 'claim_leg', 'refund_leg', 'get_deal_secret', 'reveal_claim', 'respond_to_rfq', 'negotiate', 'cancel_rfq', 'set_settlement_address'],
-  hosted: ['build_claim', 'broadcast_tx', 'quote_rfq', 'propose_price', 'accept_proposal', 'accept_terms', 'cancel_rfq', 'set_swap_address', 'remove_wallet_proof'],
+  stdio: ['fund_leg', 'claim_leg', 'refund_leg', 'get_deal_secret', 'reveal_claim', 'respond_to_rfq', 'negotiate', 'cancel_rfq', 'set_settlement_address', 'set_profile'],
+  hosted: ['build_claim', 'broadcast_tx', 'quote_rfq', 'propose_price', 'accept_proposal', 'accept_terms', 'cancel_rfq', 'set_swap_address', 'remove_wallet_proof', 'set_profile'],
 };
 
 describe.each([
-  ['stdio', stdio, 17],
-  ['hosted', hosted, 24],
+  ['stdio', stdio, 18],
+  ['hosted', hosted, 25],
 ] as const)('%s tool definitions', (name, build, count) => {
   const tools = build();
   it(`registers ${count} tools, each with a title and read/destructive hints`, () => {

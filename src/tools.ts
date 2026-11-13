@@ -35,6 +35,7 @@ const OUT = {
   deal: result({ ...THREAD, swap: output(SWAP).nullable().describe('The HTLC swap once agreed'), has_local_secret: z.boolean() }),
   swap: result(SWAP),
   secret: result({ secret: s().describe('Preimage hex — sign your claim only'), hashlock: s() }),
+  profile: result({ handle: ns().describe('Username; null = none'), handlePublic: z.boolean().describe('Counterparties see the username and record') }),
   whoami: result({ id: s().describe('Account id'), localSigners: output({ addresses: z.record(z.string(), s()).describe('Keys held here, per chain') }), solanaLink: s() }),
   tx: result({ tx: s().describe('On-chain tx id'), leg: s(), chain: s() }),
 };
@@ -234,6 +235,20 @@ export function registerTools(server: McpServer, api: HashlockClient, secrets: S
     ann('Cancel your RFQ', WRITE, { destructiveHint: true, idempotentHint: true }),
     OUT.rfq,
     wrapTool(async ({ rfq_id }) => okContent(await describeRfq((await api.cancelRfq(rfq_id)).rfq))),
+  );
+
+  tool(
+    'set_profile',
+    "Set this account's username and whether the accounts it trades with see it. " +
+      'An account is anonymous until it goes public. While it is public, every account it has a thread with — past deals included — sees its username and, beside it, its track record over ALL its swaps (deals, walk-aways, speed). ' +
+      'Give either argument or both. handle_public: false hides both again and keeps the username; handle: null removes the username, makes the account anonymous and frees the name for anyone. A username can be set ten times an hour, attempts refused as taken included. whoami shows the current handle and handlePublic.',
+    {
+      handle: z.string().nullable().optional().describe('Username: 3 to 24 characters, the letters a to z, digits and _ (stored in lowercase). null removes it'),
+      handle_public: z.boolean().optional().describe('true: counterparties see the username and the track record (needs a username). false: anonymous'),
+    },
+    ann('Set username and visibility', WRITE, { destructiveHint: true, idempotentHint: true }),
+    OUT.profile,
+    wrapTool(async ({ handle, handle_public }) => okContent(await api.setProfile({ handle, handlePublic: handle_public }))),
   );
 
   tool(

@@ -61,6 +61,7 @@ describe('stdio tools: every result validates against its output schema', async 
     getThread: async () => ({ thread, rfq, messages: [{ id: 'm', threadId: ID, senderId: 'u2', kind: 'chat', body: 'hi', amount: null, createdAt: '2026-11-02T00:00:00Z' }], swap }),
     postMessage: async () => ({}),
     reject: async () => ({}),
+    setProfile: async (p: { handle?: string | null; handlePublic?: boolean }) => ({ handle: p.handle ?? null, handlePublic: p.handlePublic ?? false }),
   };
   const secrets = { get: () => null };
   const call = await connect((s) => registerTools(s, api as never, secrets as never, {} as never));
@@ -79,11 +80,18 @@ describe('stdio tools: every result validates against its output schema', async 
       ['deal_status', { thread_id: ID }],
       ['negotiate', { thread_id: ID, action: 'message', body: 'hello' }],
       ['negotiate', { thread_id: ID, action: 'reject' }],
+      ['set_profile', { handle: 'my_desk', handle_public: true }],
+      ['set_profile', { handle: null }],
     ] as const) {
       const r = await call(name, args);
       expect(r.structuredContent, name).toEqual(JSON.parse(r.content[0]!.text));
       expect(r.structuredContent!.error, name).toBeUndefined();
     }
+  });
+
+  it('set_profile hands its snake_case argument to the API as handlePublic', async () => {
+    expect((await call('set_profile', { handle: 'my_desk', handle_public: true })).structuredContent).toEqual({ handle: 'my_desk', handlePublic: true });
+    expect((await call('set_profile', { handle_public: false })).structuredContent).toEqual({ handle: null, handlePublic: false });
   });
 
   it('a tool that throws returns the error envelope, and it validates too', async () => {
@@ -137,6 +145,7 @@ describe('hosted tools: every result validates against its output schema', async
     [`POST /threads/${ID}/accept`]: { thread: v1Thread, swap },
     ...BUILDS,
     'POST /tx/broadcast': { txid: 'ef'.repeat(32) },
+    'PATCH /me/profile': { handle: 'my_desk', handlePublic: true },
   };
   const callV1: CallV1 = async (path, init) => {
     const body = routes[`${init?.method ?? 'GET'} ${path}`];
@@ -157,6 +166,8 @@ describe('hosted tools: every result validates against its output schema', async
       ['quote_rfq', { id: ID, quoteAmount: '3500000000' }],
       ['accept_terms', { id: ID, quoteAmount: '3500000000' }],
       ['broadcast_tx', { chain: 'evm', signed: '0x00' }],
+      ['set_profile', { handle: 'my_desk', handlePublic: true }],
+      ['set_profile', { handle: null }],
     ] as const) {
       const r = await call(name, args);
       expect(r.isError, name).toBe(false);

@@ -155,7 +155,18 @@ export interface User {
   btcAddress: string | null;
   solanaAddress: string | null;
   telegramId: string | null;
+  /** The account's username, and whether the accounts it trades with see it (and its record). */
+  handle?: string | null;
+  handlePublic?: boolean;
 }
+
+/** The app's refusal codes for a username, in words: the web app has its own sentence for each, an agent has only this. */
+const PROFILE_REFUSALS: Record<string, string> = {
+  invalid: 'not a valid username: 3 to 24 characters, the letters a to z, digits and _',
+  reserved: 'not a valid username: that name is reserved — choose another',
+  taken: 'that username belongs to another account — choose another',
+  no_name: 'this account has no username — one is required before (or together with) going public',
+};
 
 export class ApiError extends Error {
   constructor(
@@ -639,6 +650,16 @@ export class HashlockClient {
     return this.withSolanaReason(() => this.req<{ rfq: Rfq }>('/rfqs', { body }));
   };
   cancelRfq = (id: string) => this.req<{ rfq: Rfq }>(`/rfqs/${id}/cancel`, { body: {} });
+  /** The account's username and/or who sees it. Answers the two fields as they now stand. */
+  setProfile = async (patch: { handle?: string | null; handlePublic?: boolean }) => {
+    try {
+      const { user } = await this.req<{ user: User | null }>('/me/profile', { method: 'PATCH', body: patch });
+      return { handle: user?.handle ?? null, handlePublic: user?.handlePublic ?? false };
+    } catch (e) {
+      const words = e instanceof ApiError ? PROFILE_REFUSALS[e.message] : undefined;
+      throw words ? new ApiError(words, (e as ApiError).status) : e;
+    }
+  };
   postQuote = async (id: string, quoteAmount: string) => {
     await this.ensureSolanaLinked();
     return this.withSolanaReason(() => this.req<{ quote: unknown; thread: Thread }>(`/rfqs/${id}/quotes`, { body: { quoteAmount } }));
