@@ -4,7 +4,7 @@ import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
 import { keyAnswered, rateLimit } from './rate-limit.js';
-import { registerHostedTools } from './tools.js';
+import { HOSTED_INSTRUCTIONS, registerHostedTools } from './tools.js';
 import { makeCallV1 } from './v1-client.js';
 
 /**
@@ -12,10 +12,11 @@ import { makeCallV1 } from './v1-client.js';
  * connect from an MCP client by URL. STATELESS: each request builds a fresh McpServer + transport
  * (the SDK's recommended stateless mode), so there is no cross-request session state to leak.
  *
- * Auth (MVP): the caller presents their own Hashlock developer key (`hk_…`, from
- * hashlock.markets/developers) as `Authorization: Bearer …`; it is forwarded to `/v1` unchanged and
- * never stored. OAuth 2.1 (one-click connect for Claude/ChatGPT, minting a scoped key after Privy
- * login) is the next slice — @hono/mcp ships mcpAuthRouter/bearerAuth for it.
+ * Auth: the caller presents a Hashlock developer key (`hk_…`) as `Authorization: Bearer …` — one made
+ * at hashlock.markets/developers, or the one an MCP client gets through OAuth (the authorization server
+ * is the API: /.well-known/oauth-authorization-server, /oauth/authorize, /api/oauth/token). It is
+ * forwarded to `/v1` unchanged and never stored. Without one, the 401 below points the client at the
+ * protected-resource metadata so it can start that sign-in.
  */
 export interface HttpServerOptions {
   /** Base URL of the developer API, e.g. https://api.hashlock.markets/v1 */
@@ -89,7 +90,7 @@ export function createHttpApp(opts: HttpServerOptions): Hono {
       return c.json({ jsonrpc: '2.0', error: { code: -32600, message: 'Invalid Request: not a JSON-RPC message' }, id: null }, 400);
 
     // Fresh per-request server + transport (stateless). Tools proxy to /v1 with THIS caller's key.
-    const server = new McpServer({ name: opts.name ?? 'hashlock', version: opts.version ?? '0.0.0' });
+    const server = new McpServer({ name: opts.name ?? 'hashlock', version: opts.version ?? '0.0.0' }, { instructions: HOSTED_INSTRUCTIONS });
     const callV1 = makeCallV1(opts.v1Url, token);
     registerHostedTools(server, async (path, init) => {
       const r = await callV1(path, init);

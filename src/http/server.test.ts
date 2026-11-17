@@ -106,3 +106,27 @@ describe('GET /mcp', () => {
     expect(r.headers.get('www-authenticate')).toContain('Bearer');
   });
 });
+
+describe('initialize', () => {
+  it('tells every client how a chat assistant without a wallet finishes a deal', async () => {
+    const r = await post('{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}');
+    expect(r.status).toBe(200);
+    const text = await r.text();
+    const body = JSON.parse(text.includes('data:') ? text.slice(text.indexOf('data:') + 5).trim() : text);
+    expect(body.result.instructions).toContain('dealUrl');
+    expect(body.result.instructions).toContain('Never generate a swap secret');
+  });
+});
+
+describe('the hashlock parameters', () => {
+  it('each tells a chat assistant without a wallet not to make the secret', async () => {
+    const r = await post('{"jsonrpc":"2.0","id":1,"method":"tools/list"}');
+    const text = await r.text();
+    const body = JSON.parse(text.includes('data:') ? text.slice(text.indexOf('data:') + 5).trim() : text);
+    const withHashlock = (body.result.tools as Array<{ name: string; inputSchema: { properties?: Record<string, { description?: string }> } }>).filter(
+      (t) => t.inputSchema.properties?.hashlock,
+    );
+    expect(withHashlock.map((t) => t.name).sort()).toEqual(['accept_proposal', 'accept_terms', 'propose_price']);
+    for (const t of withHashlock) expect(t.inputSchema.properties!.hashlock!.description).toContain('Never make the secret');
+  });
+});
