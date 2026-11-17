@@ -1,0 +1,49 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "hashlock-markets",
+  "version": "1.13.1",
+  "description": "Trade crypto peer-to-peer on Hashlock Markets, a non-custodial OTC desk: post or answer a request for quote, negotiate, and settle atomically through hash-time-locked escrow across Bitcoin, Ethereum, Base, Robinhood Chain, TRON and Solana. Both sides are paid or both are refunded; Hashlock never holds keys or funds.",
+  "author": {
+    "name": "Hashlock Markets",
+    "url": "https://hashlock.markets"
+  },
+  "homepage": "https://hashlock.markets",
+  "repository": "https://github.com/Hashlock-Tech/hashlock-mcp",
+  "license": "MIT",
+  "keywords": [
+    "otc",
+    "rfq",
+    "atomic-swap",
+    "htlc",
+    "bitcoin",
+    "ethereum",
+    "solana",
+    "tron",
+    "cross-chain",
+    "non-custodial",
+    "mcp"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Hashlock Markets",
+        "shortDescription": "Non-custodial OTC crypto swaps",
+        "longDescription": "Trade crypto peer-to-peer on Hashlock Markets, a non-custodial OTC desk: post or answer a request for quote, negotiate, and settle atomically through hash-time-locked escrow across Bitcoin, Ethereum, Base, Robinhood Chain, TRON and Solana. Both sides are paid or both are refunded; Hashlock never holds keys or funds. In chat you find assets, post requests, read quotes and negotiate; you accept as the initiator, fund and claim on the deal page with your own wallet.",
+        "developerName": "Hashlock Corp",
+        "category": "Finance",
+        "capabilities": [
+          "Read",
+          "Write"
+        ],
+        "websiteURL": "https://hashlock.markets",
+        "supportURL": "https://docs.hashlock.markets",
+        "privacyPolicyURL": "https://hashlock.markets/legal/privacy",
+        "termsOfServiceURL": "https://hashlock.markets/legal/terms",
+        "defaultPrompt": "What can I trade on Hashlock Markets, and what is open on the board for BTC?",
+        "brandColor": "#665BFF",
+        "composerIcon": "./assets/icon.png",
+        "logo": "./assets/icon.png"
+      }
+    }
+  }
+}

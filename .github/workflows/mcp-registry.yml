@@ -37,6 +37,11 @@ jobs:
           TAG="$PKG"; [ "$GITHUB_REF_TYPE" = tag ] && TAG="${GITHUB_REF_NAME#v}"
           echo "package.json=$PKG server.json=$SJ server.json.packages[0]=$SJ_PKG tag=$TAG"
           [ "$PKG" = "$SJ" ] && [ "$PKG" = "$SJ_PKG" ] && [ "$PKG" = "$TAG" ] || { echo "::error::versions differ: package.json $PKG, server.json $SJ, server.json.packages[0] $SJ_PKG, tag $TAG"; exit 1; }
+          # The plugin manifests ship from this repo too, at the same version (src/__tests__/plugin-manifests.test.ts).
+          for f in plugin.json .claude-plugin/plugin.json gemini-extension.json lhm.plugin.json; do
+            V="$(node -p "require('./$f').version")"
+            [ "$V" = "$PKG" ] || { echo "::error::$f is $V, package.json is $PKG"; exit 1; }
+          done
           echo "version=$PKG" >> "$GITHUB_OUTPUT"
 
       - name: Wait for the npm version to be live

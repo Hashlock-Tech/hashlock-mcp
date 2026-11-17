@@ -30,6 +30,28 @@ Settlement **signing** (funding and claiming the HTLCs) stays with your own wall
   **non-custodial**: settlement returns **unsigned** transactions you sign with your own wallet, and the
   server never holds keys or your swap preimage. See [Remote (hosted)](#remote-hosted) below.
 
+## Install as a plugin — any agent client
+
+This repository is one plugin for every client: the hosted server (`https://hashlock.markets/mcp`, sign-in by
+OAuth) plus the [`hashlock-markets` skill](skills/hashlock-markets/SKILL.md). In a chat, the assistant finds assets,
+posts requests and negotiates; you accept as the initiator, fund and claim on the deal page it links to.
+
+| Client | How |
+|---|---|
+| Claude (claude.ai, Desktop) | Settings → Connectors → Add custom connector → `https://hashlock.markets/mcp` |
+| Claude Code | `/plugin marketplace add Hashlock-Tech/hashlock-mcp`, then `/plugin install hashlock-markets@hashlock` |
+| Codex | `codex plugin marketplace add Hashlock-Tech/hashlock-mcp`, then `codex plugin add hashlock-markets@hashlock` |
+| ChatGPT | Settings → Plugins → + → Add custom MCP server → `https://hashlock.markets/mcp` (Business and Enterprise; Pro: read only) |
+| Cursor | `.cursor/mcp.json`: `{"mcpServers": {"hashlock": {"url": "https://hashlock.markets/mcp"}}}` |
+| VS Code / Copilot | `code --add-mcp '{"name":"hashlock","type":"http","url":"https://hashlock.markets/mcp"}'` |
+| Gemini CLI | `gemini extensions install https://github.com/Hashlock-Tech/hashlock-mcp` |
+| Grok | grok.com → Connectors → New Connector → Custom → `https://hashlock.markets/mcp`; Grok Build reads the Claude Code plugin |
+| Hermes Agent | `hermes skills tap add Hashlock-Tech/hashlock-mcp` and `hermes skills install Hashlock-Tech/hashlock-mcp/hashlock-markets`; under `mcp_servers` in `~/.hermes/config.yaml`: `hashlock: { url: "https://hashlock.markets/mcp", auth: oauth }`, then `hermes mcp login hashlock` |
+| OpenClaw | `openclaw mcp set hashlock '{"url":"https://hashlock.markets/mcp","transport":"streamable-http","auth":"oauth"}'`, then `openclaw mcp login hashlock`; the skill: `openclaw plugins install git:github.com/Hashlock-Tech/hashlock-mcp` |
+
+The manifests: `plugin.json` + `mcp.json` (Agent Plugins 1.0 — Codex, Cursor, VS Code, Devin),
+`.claude-plugin/` (Claude Code, Grok Build, and OpenClaw, which prefers it over `plugin.json`) and `gemini-extension.json`.
+
 ## Install
 
 ```bash
@@ -226,10 +248,9 @@ pnpm run lint     # tsc --noEmit
 pnpm test         # vitest
 ```
 
-Releasing means bumping **two** version numbers, and they are not the same one: `package.json` (and
-`server.json`'s `packages[0].version`, which must match it) is the npm package, while `server.json`'s
-own top-level `version` numbers the entry in the MCP Registry. Leave the second behind and npm
-publishes happily while the registry answers `cannot publish duplicate version`. Then tag: `git tag
-v0.8.1 && git push origin v0.8.1` runs both workflows.
+Releasing means one version everywhere: `package.json`, both versions in `server.json` (top-level — the MCP
+Registry entry — and `packages[0].version`), `lhm.plugin.json`, and the plugin manifests `plugin.json`,
+`.claude-plugin/plugin.json` and `gemini-extension.json`. `src/__tests__/plugin-manifests.test.ts` and the
+registry workflow check them. Then tag: `git tag v1.14.0 && git push origin v1.14.0` runs both workflows.
 
 Node ≥ 20. MIT.

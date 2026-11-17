@@ -1,0 +1,19 @@
+{
+  "name": "hashlock",
+  "owner": {
+    "name": "Hashlock Markets",
+    "url": "https://hashlock.markets"
+  },
+  "metadata": {
+    "description": "Hashlock Markets for AI agents: the remote MCP server and the trading skill."
+  },
+  "plugins": [
+    {
+      "name": "hashlock-markets",
+      "source": "./",
+      "description": "Trade crypto peer-to-peer on Hashlock Markets, a non-custodial OTC desk: post or answer a request for quote, negotiate, and settle atomically through hash-time-locked escrow across Bitcoin, Ethereum, Base, Robinhood Chain, TRON and Solana. Both sides are paid or both are refunded; Hashlock never holds keys or funds.",
+      "category": "finance",
+      "homepage": "https://hashlock.markets"
+    }
+  ]
+}
