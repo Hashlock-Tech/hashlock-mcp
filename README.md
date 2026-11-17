@@ -41,11 +41,11 @@ posts requests and negotiates; you accept as the initiator, fund and claim on th
 | Claude (claude.ai, Desktop) | Settings → Connectors → Add custom connector → `https://hashlock.markets/mcp` |
 | Claude Code | `/plugin marketplace add Hashlock-Tech/hashlock-mcp`, then `/plugin install hashlock-markets@hashlock` |
 | Codex | `codex plugin marketplace add Hashlock-Tech/hashlock-mcp`, then `codex plugin add hashlock-markets@hashlock` |
-| ChatGPT | Settings → Plugins → + → Add custom MCP server → `https://hashlock.markets/mcp` (Business and Enterprise; Pro: read only) |
+| ChatGPT | [chatgpt.com/plugins](https://chatgpt.com/plugins) → + → Add custom MCP server → `https://hashlock.markets/mcp` (write actions need a plan that allows custom MCP servers to write — Business or Enterprise) |
 | Cursor | `.cursor/mcp.json`: `{"mcpServers": {"hashlock": {"url": "https://hashlock.markets/mcp"}}}` |
 | VS Code / Copilot | `code --add-mcp '{"name":"hashlock","type":"http","url":"https://hashlock.markets/mcp"}'` |
 | Gemini CLI | `gemini extensions install https://github.com/Hashlock-Tech/hashlock-mcp` |
-| Grok | grok.com → Connectors → New Connector → Custom → `https://hashlock.markets/mcp`; Grok Build reads the Claude Code plugin |
+| Grok Build | reads the Claude Code plugin above |
 | Hermes Agent | `hermes skills tap add Hashlock-Tech/hashlock-mcp` and `hermes skills install Hashlock-Tech/hashlock-mcp/hashlock-markets`; under `mcp_servers` in `~/.hermes/config.yaml`: `hashlock: { url: "https://hashlock.markets/mcp", auth: oauth }`, then `hermes mcp login hashlock` |
 | OpenClaw | `openclaw mcp set hashlock '{"url":"https://hashlock.markets/mcp","transport":"streamable-http","auth":"oauth"}'`, then `openclaw mcp login hashlock`; the skill: `openclaw plugins install git:github.com/Hashlock-Tech/hashlock-mcp` |
 
