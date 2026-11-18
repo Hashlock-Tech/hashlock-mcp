@@ -64,12 +64,22 @@ describe('tools by key kind', () => {
     // builder or a relay ("never … broadcast" is a prohibition and stays).
     const describesSettling = /\bbuild_(fund|claim|refund)\b|broadcast_tx|\bbuilders?\b|\brelay/i;
     expect(await init('hk_oa_live_x')).not.toMatch(describesSettling);
-    for (const t of await toolDefs('hk_oa_live_x')) expect(JSON.stringify(t), t.name).not.toMatch(describesSettling);
+    for (const t of await toolDefs('hk_oa_live_x')) {
+      expect(JSON.stringify(t), t.name).not.toMatch(describesSettling);
+      expect(t.description, t.name).not.toMatch(/your hashlock|pass hashlock|hashlock = sha256/);
+      // …and no tool takes a hashlock: an assistant never holds the secret behind one
+      expect(Object.keys((t as { inputSchema?: { properties?: object } }).inputSchema?.properties ?? {}), t.name).not.toContain('hashlock');
+    }
   });
 
   it('gives a developer key every tool and the agent instructions', async () => {
     const tools = await list('hk_live_x');
     for (const t of ['build_fund', 'build_claim', 'build_refund', 'broadcast_tx']) expect(tools).toContain(t);
+    const defs = await toolDefs('hk_live_x');
+    for (const name of ['propose_price', 'accept_proposal', 'accept_terms']) {
+      const t = defs.find((d) => d.name === name) as { inputSchema: { properties: object } };
+      expect(Object.keys(t.inputSchema.properties), name).toContain('hashlock');
+    }
     expect(await init('hk_live_x')).toMatch(/broadcast_tx/);
   });
 });

@@ -140,6 +140,14 @@ const SIGNED = z
  */
 export function registerHostedTools(server: McpServer, callV1: CallV1, opts: { settlement: boolean }): void {
   const tool = toolRegistrar(server);
+  // The initiator's hashlock, on the tools that commit to a price — only for a client that can hold the secret behind it.
+  // A chat assistant (OAuth) gets no such parameter: the person accepts as initiator on the deal page, whose browser
+  // makes and keeps the secret.
+  // Typed as always present so the handlers stay one code path; for an assistant the parameter is absent from the
+  // schema, and `own` below drops one sent anyway rather than trusting the SDK to strip it.
+  const hashlockParam = (describe: string) =>
+    (opts.settlement ? { hashlock: z.string().optional().describe(describe + NO_SECRET_IN_CHAT) } : {}) as { hashlock: z.ZodOptional<z.ZodString> };
+  const own = (hashlock: string | undefined) => (opts.settlement ? hashlock : undefined);
   // ── read ────────────────────────────────────────────────────────────────
   tool('whoami', 'The account behind the API key: its scopes (read/taker/maker) and, per chain, `login` (the wallet it signed in with, and where the account is PAID) plus `proven` (wallets it proved). Over an API key you may GIVE from the login wallet on any chain and from a proven wallet on EVM. To trade on another chain (TRON, Solana, Bitcoin) prove that wallet WITH an authorisation from your login wallet (wallet_proof_message with `login`, then prove_wallet with `authorization`): it then pays, refunds and funds like a login wallet. Verify auth, and check what you may give before quoting.', {}, ann('Who am I', READ), OUT.whoami,
     async () =>
@@ -380,7 +388,10 @@ export function registerHostedTools(server: McpServer, callV1: CallV1, opts: { s
 
   tool(
     'quote_rfq',
-    'Quote an open RFQ (scope: maker) — opens a settlement thread. quoteAmount = total quote-asset amount in base units. Your quote is your acceptance: when the requester accepts, the deal is agreed. Only if the returned thread shows makerAccepted: false (you are the initiator) call accept_terms on it right away with your hashlock — or, acting for a person with no wallet here, send them to the thread\'s dealUrl to accept there.',
+    'Quote an open RFQ (scope: maker) — opens a settlement thread. quoteAmount = total quote-asset amount in base units. Your quote is your acceptance: when the requester accepts, the deal is agreed. ' +
+      (opts.settlement
+        ? 'Only if the returned thread shows makerAccepted: false (you are the initiator) call accept_terms on it right away with your hashlock — or, acting for a person with no wallet here, send them to the thread\'s dealUrl to accept there.'
+        : 'If the returned thread shows makerAccepted: false (the person is the initiator), send them to the thread\'s dealUrl to accept there.'),
     { id: z.string().uuid().describe('Request id from list_open_rfqs'), quoteAmount: z.string().regex(/^\d+$/).describe('total price, base units — at most 8 decimals of its asset (fewer if the asset has fewer); the API refuses more') },
     ann('Quote an RFQ', WRITE, { destructiveHint: true }),
     OUT.thread,
@@ -389,44 +400,55 @@ export function registerHostedTools(server: McpServer, callV1: CallV1, opts: { s
 
   tool(
     'propose_price',
-    'Counter with a new total price on a thread (base units). Proposing is agreeing to it: when the counterparty takes it with accept_proposal(accept: true), the deal is agreed. The initiator (funds the long leg) agrees only with its hashlock = sha256(secret), so pass it here.',
+    'Counter with a new total price on a thread (base units). Proposing is agreeing to it: when the counterparty takes it with accept_proposal(accept: true), the deal is agreed. ' +
+      (opts.settlement
+        ? 'The initiator (funds the long leg) agrees only with its hashlock = sha256(secret), so pass it here.'
+        : 'If the person is the initiator (funds the long leg), their counter is not yet their agreement: once the price suits them, give them the thread\'s dealUrl to accept there.'),
     {
       id: z.string().uuid().describe('Thread id'),
       quoteAmount: z.string().regex(/^\d+$/).describe('the new total price, base units — at most 8 decimals of its asset (fewer if the asset has fewer); the API refuses more'),
-      hashlock: z.string().optional().describe("32-byte hex sha256(secret) — the initiator's; ignored from the other side." + NO_SECRET_IN_CHAT),
+      ...hashlockParam("32-byte hex sha256(secret) — the initiator's; ignored from the other side."),
     },
     ann('Counter with a price', WRITE, { destructiveHint: true }),
     OUT.thread,
-    async ({ id, quoteAmount, hashlock }) => out(await callV1(`/threads/${id}/propose`, { method: 'POST', body: { quoteAmount, hashlock } })),
+    async ({ id, quoteAmount, hashlock }) => out(await callV1(`/threads/${id}/propose`, { method: 'POST', body: { quoteAmount, hashlock: own(hashlock) } })),
   );
 
   tool(
     'accept_proposal',
-    "Accept the counterparty's pending price on a thread. Pass the pendingAmount you read from get_thread: if a newer counter replaced it, this is refused — read again and decide. With accept: true it also accepts the deal at that price in the same step (COMMITS, like accept_terms) — the proposer agreed by proposing, so this agrees the deal; the initiator (funds the long leg) passes hashlock = sha256(secret) here. Without accept, you accept afterwards with accept_terms.",
+    "Accept the counterparty's pending price on a thread. Pass the pendingAmount you read from get_thread: if a newer counter replaced it, this is refused — read again and decide. With accept: true it also accepts the deal at that price in the same step (COMMITS, like accept_terms) — the proposer agreed by proposing, so this agrees the deal" +
+      (opts.settlement
+        ? '; the initiator (funds the long leg) passes hashlock = sha256(secret) here. Without accept, you accept afterwards with accept_terms.'
+        : ". For the initiator (funds the long leg) accept: true is refused: take the price without it, then give them the thread's dealUrl to accept there. Without accept, a non-initiator accepts afterwards with accept_terms."),
     {
       id: z.string().uuid().describe('Thread id'),
       quoteAmount: z.string().regex(/^\d+$/).describe('the pending price, base units'),
       accept: z.boolean().optional().describe('also accept the deal at this price (one step)'),
-      hashlock: z.string().optional().describe('32-byte hex sha256(secret); required from the initiator with accept: true.' + NO_SECRET_IN_CHAT),
+      ...hashlockParam('32-byte hex sha256(secret); required from the initiator with accept: true.'),
     },
     ann('Take the pending price', WRITE, { destructiveHint: true }),
     OUT.threadSwap,
     async ({ id, quoteAmount, accept, hashlock }) =>
       // Sent as given: a hashlock without accept is refused by the server (400), never dropped here in silence.
-      out(await callV1(`/threads/${id}/accept-proposal`, { method: 'POST', body: { quoteAmount, accept, hashlock } })),
+      out(await callV1(`/threads/${id}/accept-proposal`, { method: 'POST', body: { quoteAmount, accept, hashlock: own(hashlock) } })),
   );
 
   tool(
     'accept_terms',
-    'Accept the current terms at the price you read (currentQuoteAmount from get_thread) — refused if it moved since. Needed only when your side\'s accepted flag (takerAccepted / makerAccepted) is false: your own quote, or a proposal you sent with your hashlock as the initiator, already counts. When BOTH sides have accepted, the HTLC swap is created. The initiator (funds the long leg) must pass hashlock = sha256(secret): generate a 32-byte secret yourself, keep it safe, and reveal it only when you claim; until then only its hash leaves you. Acting for a person with no wallet here (a chat assistant)? Never make the secret yourself: if they are the initiator, give them the thread\'s dealUrl to accept there.',
+    'Accept the current terms at the price you read (currentQuoteAmount from get_thread) — refused if it moved since. Needed only when your side\'s accepted flag (takerAccepted / makerAccepted) is false: your own quote' +
+      (opts.settlement ? ', or a proposal you sent with your hashlock as the initiator,' : '') +
+      ' already counts. When BOTH sides have accepted, the HTLC swap is created. ' +
+      (opts.settlement
+        ? 'The initiator (funds the long leg) must pass hashlock = sha256(secret): generate a 32-byte secret yourself, keep it safe, and reveal it only when you claim; until then only its hash leaves you. Acting for a person with no wallet here (a chat assistant)? Never make the secret yourself: if they are the initiator, give them the thread\'s dealUrl to accept there.'
+        : 'Not for the initiator (funds the long leg) — refused without a hashlock: give them the thread\'s dealUrl to accept there.'),
     {
       id: z.string().uuid().describe('Thread id'),
       quoteAmount: z.string().regex(/^\d+$/).describe('the current price, base units'),
-      hashlock: z.string().optional().describe('32-byte hex; required from the initiator.' + NO_SECRET_IN_CHAT),
+      ...hashlockParam('32-byte hex; required from the initiator.'),
     },
     ann('Accept the deal', WRITE, { destructiveHint: true }),
     OUT.threadSwap,
-    async ({ id, quoteAmount, hashlock }) => out(await callV1(`/threads/${id}/accept`, { method: 'POST', body: { quoteAmount, hashlock } })),
+    async ({ id, quoteAmount, hashlock }) => out(await callV1(`/threads/${id}/accept`, { method: 'POST', body: { quoteAmount, hashlock: own(hashlock) } })),
   );
 
   tool(

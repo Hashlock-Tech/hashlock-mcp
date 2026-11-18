@@ -204,3 +204,18 @@ describe('hosted tools: every result validates against its output schema', async
     expect(r.structuredContent).toBeUndefined();
   });
 });
+
+// A chat assistant (OAuth key) has no hashlock parameter: the person accepts as initiator on the deal page. One it sends
+// anyway through these tools never reaches /v1. (The key itself still works on /v1 directly — this shapes the tools.)
+describe('hosted tools for a chat assistant: no hashlock reaches /v1', () => {
+  it('drops a hashlock the assistant sends to accept_terms, accept_proposal and propose_price', async () => {
+    const bodies: unknown[] = [];
+    const call = await connect((s) =>
+      registerHostedTools(s, async (_path, init) => (bodies.push(init?.body), { status: 200, json: { thread } }), { settlement: false }),
+    );
+    for (const name of ['accept_terms', 'accept_proposal', 'propose_price'])
+      await call(name, { id: ID, quoteAmount: '3500000000', ...(name === 'accept_proposal' ? { accept: true } : {}), hashlock: 'ab'.repeat(32) });
+    expect(bodies).toHaveLength(3);
+    for (const b of bodies) expect((b as { hashlock?: string }).hashlock).toBeUndefined();
+  });
+});
