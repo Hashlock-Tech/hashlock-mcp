@@ -60,9 +60,11 @@ describe('tools by key kind', () => {
     const tools = await list('hk_oa_live_x');
     for (const t of ['build_fund', 'build_claim', 'build_refund', 'broadcast_tx']) expect(tools).not.toContain(t);
     expect(tools).toContain('accept_terms');
-    expect(await init('hk_oa_live_x')).not.toMatch(/build_fund|build_claim|build_refund|broadcast_tx/);
-    // …nor does any tool it is given name one it is not
-    for (const t of await toolDefs('hk_oa_live_x')) expect(t.description, t.name).not.toMatch(/build_fund|build_claim|build_refund|broadcast_tx/);
+    // Nothing it reads — instructions, or any part of a tool's definition — names a settlement tool or speaks of a
+    // builder or a relay ("never … broadcast" is a prohibition and stays).
+    const describesSettling = /\bbuild_(fund|claim|refund)\b|broadcast_tx|\bbuilders?\b|\brelay/i;
+    expect(await init('hk_oa_live_x')).not.toMatch(describesSettling);
+    for (const t of await toolDefs('hk_oa_live_x')) expect(JSON.stringify(t), t.name).not.toMatch(describesSettling);
   });
 
   it('gives a developer key every tool and the agent instructions', async () => {

@@ -10,8 +10,9 @@ import type { CallV1 } from './v1-client.js';
  * with the caller's own `hk_` bearer key. No business logic, auth, or validation is duplicated
  * (the /v1 router's requireApiKey/requireScope + zod run server-side). Settlement is custody-agnostic:
  * build_fund/claim/refund return UNSIGNED transactions the caller signs with their own wallet and
- * submits via broadcast_tx. There is deliberately NO autonomous key-in-env signing and NO server-side
- * secret storage here — the initiator supplies their own hashlock and keeps their own preimage.
+ * submits via broadcast_tx — registered only for a key created by hand, never for one from OAuth (a chat
+ * assistant). There is deliberately NO autonomous key-in-env signing and NO server-side secret storage
+ * here — the initiator supplies their own hashlock and keeps their own preimage.
  *
  * ponytail: amounts pass through as base-unit integer strings (raw /v1 shape). Human-decimal
  * conversion via the asset registry is a follow-up — add it if agents trip over decimals.
@@ -73,8 +74,7 @@ export const ASSISTANT_INSTRUCTIONS =
   ABOUT +
   'You act for a person and hold no wallet. ' +
   FOR_ASSISTANT +
-  'An agent that signs with its own keys connects with an API key from hashlock.markets/developers instead, which also gets ' +
-  'the tools that build and relay transactions.\n' +
+  'An agent that signs with its own keys connects with an API key from hashlock.markets/developers instead.\n' +
   UNTRUSTED;
 /**
  * A key minted by the OAuth flow (the API's OAUTH_KEY_PREFIX): the client is a chat assistant, not an agent with its own
@@ -418,7 +418,7 @@ export function registerHostedTools(server: McpServer, callV1: CallV1, opts: { s
 
   tool(
     'accept_terms',
-    'Accept the current terms at the price you read (currentQuoteAmount from get_thread) — refused if it moved since. Needed only when your side\'s accepted flag (takerAccepted / makerAccepted) is false: your own quote, or a proposal you sent with your hashlock as the initiator, already counts. When BOTH sides have accepted, the HTLC swap is created. The initiator (funds the long leg) must pass hashlock = sha256(secret): generate a 32-byte secret yourself, keep it safe, and reveal it only when you claim (the claim builder sends it to the API, and the claim transaction publishes it on chain); until then only its hash leaves you. Acting for a person with no wallet here (a chat assistant)? Never make the secret yourself: if they are the initiator, give them the thread\'s dealUrl to accept there.',
+    'Accept the current terms at the price you read (currentQuoteAmount from get_thread) — refused if it moved since. Needed only when your side\'s accepted flag (takerAccepted / makerAccepted) is false: your own quote, or a proposal you sent with your hashlock as the initiator, already counts. When BOTH sides have accepted, the HTLC swap is created. The initiator (funds the long leg) must pass hashlock = sha256(secret): generate a 32-byte secret yourself, keep it safe, and reveal it only when you claim; until then only its hash leaves you. Acting for a person with no wallet here (a chat assistant)? Never make the secret yourself: if they are the initiator, give them the thread\'s dealUrl to accept there.',
     {
       id: z.string().uuid().describe('Thread id'),
       quoteAmount: z.string().regex(/^\d+$/).describe('the current price, base units'),
