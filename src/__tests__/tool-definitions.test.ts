@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import { registerHostedTools } from '../http/tools.js';
 import { registerTools } from '../tools.js';
 
@@ -44,6 +45,13 @@ describe.each([
   it('describes every parameter', () => {
     for (const [name, t] of Object.entries(tools))
       for (const [param, schema] of Object.entries(t.inputSchema?.shape ?? {})) expect(schema.description, `${name}.${param}`).toBeTruthy();
+  });
+  it('gives every parameter a JSON Schema type (a connector directory flags one without)', () => {
+    for (const [name, t] of Object.entries(tools)) {
+      if (!t.inputSchema?.shape) continue;
+      const props = (z.toJSONSchema(z.object(t.inputSchema.shape as never)) as { properties?: Record<string, { type?: unknown }> }).properties ?? {};
+      for (const [param, schema] of Object.entries(props)) expect(schema.type, `${name}.${param}`).toBeTruthy();
+    }
   });
   it('marks exactly the tools that move money, reveal the secret, bind a price, cancel or overwrite as destructive', () => {
     const marked = Object.entries(tools).filter(([, t]) => t.annotations?.destructiveHint).map(([n]) => n);

@@ -106,6 +106,14 @@ const qs = (o: Record<string, string | number | undefined>) => {
   return s ? `?${s}` : '';
 };
 
+// broadcast_tx's payload: a string (a raw EVM/Bitcoin hex transaction, a Solana base64 one) or an object (TRON's signed
+// transaction, Bitcoin's { psbtBase64, signaturesHex, preimageHex? }). Declared with a JSON Schema `type` as well as the
+// union: Claude's connector directory flags a parameter that has none.
+const SIGNED = z
+  .union([z.string(), z.record(z.string(), z.unknown())])
+  .meta({ type: ['string', 'object'] })
+  .describe('The signed payload, shaped per chain as above: a string, or an object for TRON and for a Bitcoin PSBT with its signatures');
+
 export function registerHostedTools(server: McpServer, callV1: CallV1): void {
   const tool = toolRegistrar(server);
   // ── read ────────────────────────────────────────────────────────────────
@@ -458,7 +466,7 @@ export function registerHostedTools(server: McpServer, callV1: CallV1): void {
       'the witness assembled here, so you never have to serialise Bitcoin script yourself.',
     // 'solana' was missing while the build steps above already returned sign:"solana-tx" and /v1 already
     // accepted it — so a hosted integrator could build and sign a Solana leg and then not relay it.
-    { chain: z.enum(['evm', 'tron', 'bitcoin', 'solana']).describe('Chain family of the transaction'), signed: z.unknown().describe('The signed payload, shaped per chain as above') },
+    { chain: z.enum(['evm', 'tron', 'bitcoin', 'solana']).describe('Chain family of the transaction'), signed: SIGNED },
     ann('Broadcast a signed transaction', WRITE, { destructiveHint: true }),
     OUT.broadcast,
     async ({ chain, signed }) => out(await callV1('/tx/broadcast', { method: 'POST', body: { chain, signed } })),
