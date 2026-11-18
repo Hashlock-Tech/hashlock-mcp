@@ -41,7 +41,7 @@ posts requests and negotiates; you accept as the initiator, fund and claim on th
 | Claude (claude.ai, Desktop) | Settings → Connectors → Add custom connector → `https://hashlock.markets/mcp` |
 | Claude Code | `/plugin marketplace add Hashlock-Tech/hashlock-mcp`, then `/plugin install hashlock-markets@hashlock` |
 | Codex | `codex plugin marketplace add Hashlock-Tech/hashlock-mcp`, then `codex plugin add hashlock-markets@hashlock` |
-| ChatGPT | [chatgpt.com/plugins](https://chatgpt.com/plugins) → + → Add custom MCP server → `https://hashlock.markets/mcp` (write actions need a plan that allows custom MCP servers to write — Business or Enterprise) |
+| ChatGPT | [chatgpt.com/plugins](https://chatgpt.com/plugins) → + → Add custom MCP server → `https://hashlock.markets/mcp` → Create as a plugin; install it, then pick it in a chat with @ |
 | Cursor | `.cursor/mcp.json`: `{"mcpServers": {"hashlock": {"url": "https://hashlock.markets/mcp"}}}` |
 | VS Code / Copilot | `code --add-mcp '{"name":"hashlock","type":"http","url":"https://hashlock.markets/mcp"}'` |
 | Gemini CLI | `gemini extensions install https://github.com/Hashlock-Tech/hashlock-mcp` |
