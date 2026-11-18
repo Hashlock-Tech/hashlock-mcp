@@ -151,7 +151,7 @@ describe('hosted tools: every result validates against its output schema', async
     const body = routes[`${init?.method ?? 'GET'} ${path}`];
     return body === undefined ? { status: 404, json: { error: `no route ${path}` } } : { status: 200, json: body };
   };
-  const call = await connect((s) => registerHostedTools(s, callV1));
+  const call = await connect((s) => registerHostedTools(s, callV1, { settlement: true }));
 
   it('passes the /v1 body through as structuredContent', async () => {
     for (const [name, args] of [

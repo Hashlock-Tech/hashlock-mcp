@@ -4,7 +4,7 @@ import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
 import { keyAnswered, rateLimit } from './rate-limit.js';
-import { HOSTED_INSTRUCTIONS, registerHostedTools } from './tools.js';
+import { ASSISTANT_INSTRUCTIONS, HOSTED_INSTRUCTIONS, isAssistantKey, registerHostedTools } from './tools.js';
 import { makeCallV1 } from './v1-client.js';
 
 /**
@@ -89,14 +89,20 @@ export function createHttpApp(opts: HttpServerOptions): Hono {
     if (body !== undefined && !(Array.isArray(body) ? body : [body]).every(isMessage))
       return c.json({ jsonrpc: '2.0', error: { code: -32600, message: 'Invalid Request: not a JSON-RPC message' }, id: null }, 400);
 
-    // Fresh per-request server + transport (stateless). Tools proxy to /v1 with THIS caller's key.
-    const server = new McpServer({ name: opts.name ?? 'hashlock', version: opts.version ?? '0.0.0' }, { instructions: HOSTED_INSTRUCTIONS });
+    // Fresh per-request server + transport (stateless). Tools proxy to /v1 with THIS caller's key. A key from the OAuth
+    // flow is a chat assistant's: it gets the tools without the settlement builders and relay (isAssistantKey).
+    const assistant = isAssistantKey(token);
+    const server = new McpServer({ name: opts.name ?? 'hashlock', version: opts.version ?? '0.0.0' }, { instructions: assistant ? ASSISTANT_INSTRUCTIONS : HOSTED_INSTRUCTIONS });
     const callV1 = makeCallV1(opts.v1Url, token);
-    registerHostedTools(server, async (path, init) => {
-      const r = await callV1(path, init);
-      keyAnswered(token, r.status); // what earns this key a rate-limit bucket of its own, or loses it
-      return r;
-    });
+    registerHostedTools(
+      server,
+      async (path, init) => {
+        const r = await callV1(path, init);
+        keyAnswered(token, r.status); // what earns this key a rate-limit bucket of its own, or loses it
+        return r;
+      },
+      { settlement: !assistant },
+    );
 
     const transport = new StreamableHTTPTransport();
     await server.connect(transport);

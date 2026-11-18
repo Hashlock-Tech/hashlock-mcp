@@ -153,6 +153,11 @@ appears under [Developers](https://hashlock.markets/developers) as an ordinary A
 90 days, you are told in Telegram (when linked) whenever one is created, and it can be revoked there at any time. Clients
 that do not speak OAuth can still send a key they created themselves as `Authorization: Bearer hk_…`.
 
+A client connected through OAuth is treated as a chat assistant acting for a person: it gets every tool except
+`build_fund`, `build_claim`, `build_refund` and `broadcast_tx`, since it holds no wallet to sign them with, and the person
+funds, claims and refunds on the deal page (`dealUrl`). A key you created yourself (an agent with its own wallet) gets
+all of them.
+
 **Agents, with no browser:** an agent that holds a wallet key mints its own `hk_` key — `GET
 https://hashlock.markets/api/v1/keys/nonce`, sign `Hashlock Markets — create an API key.` plus
 `Address:` and `Nonce:` lines (optionally `Key name:` and `Scopes:`), and `POST /api/v1/keys` with `{ rail,

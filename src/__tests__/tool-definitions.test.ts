@@ -14,11 +14,19 @@ function stdio() {
   registerTools(s, {} as never, {} as never, {} as never);
   return toolsOf(s);
 }
-function hosted() {
+function hosted(settlement = true) {
   const s = new McpServer({ name: 't', version: '0' });
-  registerHostedTools(s, async () => ({ status: 200, json: {} }));
+  registerHostedTools(s, async () => ({ status: 200, json: {} }), { settlement });
   return toolsOf(s);
 }
+
+// A chat assistant connected through OAuth gets every tool but the four that build or relay a signed transaction.
+it('leaves the settlement builders and relay out for a chat assistant, and nothing else', () => {
+  const all = Object.keys(hosted());
+  const assistant = Object.keys(hosted(false));
+  expect(all.filter((n) => !assistant.includes(n)).sort()).toEqual(['broadcast_tx', 'build_claim', 'build_fund', 'build_refund']);
+  expect(assistant.every((n) => all.includes(n))).toBe(true);
+});
 
 // Every tool that moves money, reveals the swap secret, binds this side to a price, cancels or overwrites (an address,
 // or the account's name and who sees its record) — by name, so a

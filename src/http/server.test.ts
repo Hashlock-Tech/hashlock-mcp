@@ -45,6 +45,33 @@ describe('a key that /v1 has accepted', () => {
   });
 });
 
+describe('tools by key kind', () => {
+  // The JSON-RPC result of one call with this key: an SSE `data:` line or plain JSON.
+  const rpc = async <T>(token: string, method: string, params?: object): Promise<T> => {
+    const text = await (await post(JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }), { authorization: `Bearer ${token}` })).text();
+    return (JSON.parse(text.split('\n').find((l) => l.startsWith('data: '))?.slice(6) ?? text) as { result: T }).result;
+  };
+  const toolDefs = async (token: string) => (await rpc<{ tools: { name: string; description: string }[] }>(token, 'tools/list')).tools;
+  const list = async (token: string) => (await toolDefs(token)).map((t) => t.name);
+  const init = async (token: string) =>
+    (await rpc<{ instructions: string }>(token, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '0' } })).instructions;
+
+  it('gives an OAuth key (hk_oa_) no settlement builders, no relay and no instructions for them', async () => {
+    const tools = await list('hk_oa_live_x');
+    for (const t of ['build_fund', 'build_claim', 'build_refund', 'broadcast_tx']) expect(tools).not.toContain(t);
+    expect(tools).toContain('accept_terms');
+    expect(await init('hk_oa_live_x')).not.toMatch(/build_fund|build_claim|build_refund|broadcast_tx/);
+    // …nor does any tool it is given name one it is not
+    for (const t of await toolDefs('hk_oa_live_x')) expect(t.description, t.name).not.toMatch(/build_fund|build_claim|build_refund|broadcast_tx/);
+  });
+
+  it('gives a developer key every tool and the agent instructions', async () => {
+    const tools = await list('hk_live_x');
+    for (const t of ['build_fund', 'build_claim', 'build_refund', 'broadcast_tx']) expect(tools).toContain(t);
+    expect(await init('hk_live_x')).toMatch(/broadcast_tx/);
+  });
+});
+
 describe('request body limit on /mcp', () => {
   const over = filler(1024 * 1024);
 
