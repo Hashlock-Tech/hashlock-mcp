@@ -37,6 +37,10 @@ npm install -g @hashlock-tech/mcp
 
 Then use `"command": "hashlock-mcp"` in the config instead of npx.
 
+### Test on the sandbox first
+
+The sandbox runs the same release on testnets, with test coins. Set `HASHLOCK_API_URL` to `https://sandbox.hashlock.markets/api` and a testnet node for each chain you settle on, as in the README's [Sandbox (testnets)](https://github.com/Hashlock-Tech/hashlock-mcp#sandbox-testnets) section. Its accounts and keys are separate from production's.
+
 ## First steps
 
 1. `list_assets` — see what's tradeable and the `SYMBOL@chain` refs.

@@ -202,6 +202,35 @@ pnpm build && HASHLOCK_V1_URL=https://api.hashlock.markets/v1 PORT=8080 pnpm sta
 Env: `HASHLOCK_V1_URL` (developer-API base, default `https://api.hashlock.markets/v1`) · `PORT` (default
 `8080`). Put it behind your reverse proxy at `/mcp`; `GET /health` is a liveness probe.
 
+## Sandbox (testnets)
+
+To test with test coins first, point the server at the sandbox. It runs each production release, with the same
+tools, on testnets: Ethereum Sepolia, Base Sepolia, Robinhood Chain testnet, TRON Nile, Solana devnet and Bitcoin
+signet. The examples above stay on production. The sandbox has its own accounts and API keys: a production key does not
+work there, and a sandbox key does not work on production. More in the docs: [Sandbox](https://docs.hashlock.markets/sandbox).
+
+- **Hosted:** add `https://sandbox.hashlock.markets/mcp`. OAuth works as above. A key you create yourself comes
+  from `https://sandbox.hashlock.markets/developers`, or from a wallet signature against
+  `https://sandbox.hashlock.markets/api/v1/keys/nonce`.
+- **Local:** set `HASHLOCK_API_URL` to the sandbox, and a testnet node for every chain you settle on. The default
+  nodes are mainnet nodes; with a mainnet node, a sandbox settlement fails. Give the sandbox its own
+  `HASHLOCK_SECRETS_PATH`, so its deal secrets stay out of production's file.
+
+```bash
+HASHLOCK_API_URL=https://sandbox.hashlock.markets/api \
+HASHLOCK_EVM_KEY=0x<a key you use on testnets only> \
+HASHLOCK_EVM_RPC=https://ethereum-sepolia-rpc.publicnode.com \
+HASHLOCK_EVM_RPC_BASE_SEPOLIA=https://sepolia.base.org \
+HASHLOCK_EVM_RPC_ROBINHOOD_TESTNET=https://rpc.testnet.chain.robinhood.com \
+HASHLOCK_TRON_HOST=https://nile.trongrid.io \
+HASHLOCK_SOLANA_RPC=https://api.devnet.solana.com \
+HASHLOCK_SECRETS_PATH=$HOME/.hashlock/sandbox-secrets.json \
+npx -y @hashlock-tech/mcp
+```
+
+On the sandbox, Base and Robinhood Chain are `base-sepolia` and `robinhood-testnet` (`USDC@base-sepolia`), and
+`HASHLOCK_BTC_KEY` is a testnet WIF.
+
 ## Tools (18)
 
 | Tool | What it does |

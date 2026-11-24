@@ -66,7 +66,7 @@
           "name": "HASHLOCK_TOKEN"
         },
         {
-          "description": "Hashlock Markets REST API base (required), e.g. https://hashlock.markets/api",
+          "description": "Hashlock Markets REST API base (required), e.g. https://hashlock.markets/api; the testnet sandbox is https://sandbox.hashlock.markets/api",
           "isRequired": true,
           "name": "HASHLOCK_API_URL"
         },

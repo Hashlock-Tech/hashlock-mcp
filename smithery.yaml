@@ -38,7 +38,7 @@ config:
     HASHLOCK_API_URL:
       type: "string"
       title: "REST API endpoint"
-      description: "Hashlock Markets REST API base (required), e.g. https://hashlock.markets/api."
+      description: "Hashlock Markets REST API base (required), e.g. https://hashlock.markets/api; the testnet sandbox is https://sandbox.hashlock.markets/api."
   required: ["HASHLOCK_API_URL"]
 
 metadata:
