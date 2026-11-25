@@ -42,7 +42,7 @@
     "bitcoinjs-lib": "6.1.8",
     "ecpair": "^2.1.0",
     "hono": "^4.13.16",
-    "tiny-secp256k1": "^2.2.3",
+    "tiny-secp256k1": "^2.2.5",
     "tronweb": "^6.0.0",
     "viem": "^2.21.0",
     "zod": "^4.6.7"
