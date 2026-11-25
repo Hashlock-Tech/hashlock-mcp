@@ -1,16 +1,16 @@
-import { StreamableHTTPTransport } from '@hono/mcp';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
+import { logSdkError } from '../lib/errors.js';
 import { keyAnswered, rateLimit } from './rate-limit.js';
 import { ASSISTANT_INSTRUCTIONS, HOSTED_INSTRUCTIONS, isAssistantKey, registerHostedTools } from './tools.js';
 import { makeCallV1 } from './v1-client.js';
 
 /**
  * HOSTED remote MCP server (Streamable HTTP), served at e.g. hashlock.markets/mcp so anyone can
- * connect from an MCP client by URL. STATELESS: each request builds a fresh McpServer + transport
- * (the SDK's recommended stateless mode), so there is no cross-request session state to leak.
+ * connect from an MCP client by URL. STATELESS: each request builds a fresh McpServer (createMcpHandler),
+ * so there is no cross-request session state to leak.
  *
  * Auth: the caller presents a Hashlock developer key (`hk_…`) as `Authorization: Bearer …` — one made
  * at hashlock.markets/developers, or the one an MCP client gets through OAuth (the authorization server
@@ -35,11 +35,39 @@ const MEMBERS = new Set(['jsonrpc', 'id', 'method', 'params', 'result', 'error']
 const isMessage = (m: unknown): boolean =>
   typeof m === 'object' && m !== null && !Array.isArray(m) && Object.keys(m).every((k) => MEMBERS.has(k));
 
+const NOT_JSON = Symbol('not JSON');
+
 const bearer = (h: string | undefined): string | undefined =>
   h?.startsWith('Bearer ') ? h.slice(7).trim() : undefined;
 
 export function createHttpApp(opts: HttpServerOptions): Hono {
   const app = new Hono();
+
+  // One server per request, for the caller whose key the route hands over as authInfo. Tools proxy to /v1 with THAT key.
+  // A key from the OAuth flow is a chat assistant's: it gets the tools without the settlement builders and relay
+  // (isAssistantKey). The handler serves 2025-era clients (initialize) and 2026-07-28 ones alike.
+  // Nothing here ever changes a list, so no listChanged is advertised and no subscriptions/listen stream is opened
+  // (maxSubscriptions: 0): a listen is refused in-band at once. Each would sit idle, with keepalives, until its caller
+  // left, and any `Bearer x` could open up to the default 1024 (1000 held 41 MB) — as GET streams once did.
+  const handler = createMcpHandler(({ authInfo }) => {
+    const token = authInfo!.token;
+    const assistant = isAssistantKey(token);
+    const server = new McpServer(
+      { name: opts.name ?? 'hashlock', version: opts.version ?? '0.0.0' },
+      { instructions: assistant ? ASSISTANT_INSTRUCTIONS : HOSTED_INSTRUCTIONS, capabilities: { tools: { listChanged: false } } },
+    );
+    const callV1 = makeCallV1(opts.v1Url, token);
+    registerHostedTools(
+      server,
+      async (path, init) => {
+        const r = await callV1(path, init);
+        keyAnswered(token, r.status); // what earns this key a rate-limit bucket of its own, or loses it
+        return r;
+      },
+      { settlement: !assistant },
+    );
+    return server;
+  }, { maxSubscriptions: 0, onerror: logSdkError });
 
   app.use('/mcp', cors({ origin: '*', allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'], allowHeaders: ['Content-Type', 'Authorization', 'Mcp-Session-Id'], exposeHeaders: ['Mcp-Session-Id'] }));
 
@@ -67,46 +95,22 @@ export function createHttpApp(opts: HttpServerOptions): Hono {
       return c.json({ error: 'authorization required — connect through your MCP client, or use a key from /developers' }, 401);
     }
 
-    // This server keeps nothing between requests, so it has nothing to send on the stream a client opens
-    // with GET — each one only held a server and a socket for as long as the client liked (240 of them,
-    // 138 MB). 405 is what the protocol has a server answer when it offers no such stream; clients go on
-    // without it.
-    if (c.req.method === 'GET') {
-      c.header('Allow', 'POST, DELETE');
-      return c.json({ jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed: this server offers no event stream' }, id: null }, 405);
-    }
-
     // A JSON-RPC batch is one request to the limiter and one body to the limit above, and as many calls
     // as it holds: 20 000 `tools/list` fit in 1 MB, and answering them took this process to 2465 MB and
-    // sent 762 MB back (measured). The body is read here, once, and handed to the transport as read.
+    // sent 762 MB back (measured). The body is read here, once, and handed to the handler as read — so a
+    // body that is not JSON is answered here too: the handler cannot read it again.
     // Batching left MCP in 2025-06-18; MAX_BATCH is room for a client still on the revision that had it.
-    const body: unknown = c.req.method === 'POST' ? await c.req.json().catch(() => undefined) : undefined;
+    const body: unknown = c.req.method === 'POST' ? await c.req.json().catch(() => NOT_JSON) : undefined;
+    if (body === NOT_JSON) return c.json({ jsonrpc: '2.0', error: { code: -32700, message: 'Parse error: Invalid JSON' }, id: null }, 400);
     if (Array.isArray(body) && body.length > MAX_BATCH) return c.json({ error: `a batch may hold at most ${MAX_BATCH} messages` }, 400);
     // What is not a JSON-RPC message is refused here, in one line. The transport refuses it too, but by
     // listing every member it did not expect, once per kind of message, and sending the list back: one
-    // message of 90 000 junk members, 978 930 bytes, was answered with 14 672 694. (A body that is not
-    // JSON at all is still the transport's to name.)
+    // message of 90 000 junk members, 978 930 bytes, was answered with 14 672 694.
     if (body !== undefined && !(Array.isArray(body) ? body : [body]).every(isMessage))
       return c.json({ jsonrpc: '2.0', error: { code: -32600, message: 'Invalid Request: not a JSON-RPC message' }, id: null }, 400);
 
-    // Fresh per-request server + transport (stateless). Tools proxy to /v1 with THIS caller's key. A key from the OAuth
-    // flow is a chat assistant's: it gets the tools without the settlement builders and relay (isAssistantKey).
-    const assistant = isAssistantKey(token);
-    const server = new McpServer({ name: opts.name ?? 'hashlock', version: opts.version ?? '0.0.0' }, { instructions: assistant ? ASSISTANT_INSTRUCTIONS : HOSTED_INSTRUCTIONS });
-    const callV1 = makeCallV1(opts.v1Url, token);
-    registerHostedTools(
-      server,
-      async (path, init) => {
-        const r = await callV1(path, init);
-        keyAnswered(token, r.status); // what earns this key a rate-limit bucket of its own, or loses it
-        return r;
-      },
-      { settlement: !assistant },
-    );
-
-    const transport = new StreamableHTTPTransport();
-    await server.connect(transport);
-    return transport.handleRequest(c, body);
+    // The key is forwarded, not verified: /v1 checks it when a tool runs.
+    return handler.fetch(c.req.raw, { authInfo: { token, clientId: '', scopes: [] }, parsedBody: body });
   });
 
   return app;

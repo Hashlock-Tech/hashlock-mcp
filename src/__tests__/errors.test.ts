@@ -1,5 +1,55 @@
-import { describe, it, expect } from 'vitest';
-import { classifyError, wrapTool } from '../lib/errors.js';
+import { format } from 'node:util';
+import { describe, it, expect, vi } from 'vitest';
+import { classifyError, logSdkError, wrapTool } from '../lib/errors.js';
+
+describe('logSdkError', () => {
+  const logged = (e: unknown): string[] => {
+    const lines: string[] = [];
+    const error = vi.spyOn(console, 'error').mockImplementation((...args) => void lines.push(format(...args)));
+    try {
+      logSdkError(e);
+    } finally {
+      error.mockRestore();
+    }
+    return lines;
+  };
+
+  it('logs a failure of ours as one line that names its file and line, and its cause', () => {
+    const lines = logged(new Error('the factory failed', { cause: new TypeError('no key') }));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).not.toContain('\n');
+    expect(lines[0]).toMatch(/^\[hashlock-mcp\] "Error: the factory failed\\n +at .*errors\.test\.ts:\d+:\d+/);
+    expect(lines[0]).toMatch(/\[cause\]: TypeError: no key\\n +at /);
+  });
+
+  it('bounds the line whatever the error quotes, and keeps the head and the last frame', () => {
+    const e = new Error(`Unsupported protocol version: ${'\u0001\n'.repeat(500_000)}`);
+    const lines = logged(e);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).not.toContain('\n');
+    expect(lines[0]!.length).toBeLessThan(20_000);
+    expect(lines[0]).toMatch(/^\[hashlock-mcp\] "Error: Unsupported protocol version: /);
+    expect(lines[0]).toMatch(/…\(\d+ chars\)… /);
+    expect(lines[0]!.endsWith(`${JSON.stringify(e.stack!.split('\n').at(-1)).slice(1, -1)}"`)).toBe(true);
+  });
+
+  it("keeps the frames of an error whose text is not its stack's first line (a ZodError's)", () => {
+    class Issues extends Error {
+      override toString() {
+        return '[{"code":"invalid_type"}]';
+      }
+    }
+    expect(logged(new Issues('bad message'))[0]).toMatch(/at .*errors\.test\.ts:\d+:\d+/);
+  });
+
+  it('never throws, whatever it is given', () => {
+    const hostile = new Error('x', { cause: Object.create(null) });
+    Object.defineProperty(hostile, 'name', { get: () => { throw new Error('getter'); } });
+    const unprintable = new Proxy({}, { get: () => { throw new Error('trap'); }, getPrototypeOf: () => { throw new Error('trap'); } });
+    for (const e of [hostile, Object.create(null), { toString: () => { throw new Error('toString'); } }, undefined, unprintable])
+      expect(() => logged(e)).not.toThrow();
+  });
+});
 
 describe('classifyError', () => {
   it('maps GraphQL field-validation / not-found language to NOT_FOUND', () => {

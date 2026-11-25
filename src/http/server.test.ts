@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { describe, expect, it } from 'vitest';
+import { format } from 'node:util';
+import { describe, expect, it, vi } from 'vitest';
 import { createHttpApp } from './server.js';
 
 // The API is never called: a body is refused, or fails to parse, before any tool runs.
@@ -125,7 +126,7 @@ describe('batch limit on /mcp', () => {
     }
   });
 
-  it('leaves a body that is not JSON to the transport, which reads it again and names the parse error', async () => {
+  it('answers a body that is not JSON with a JSON-RPC parse error', async () => {
     const r = await post('{not json');
     expect(r.status).toBe(400);
     expect(((await r.json()) as { error: { code: number } }).error.code).toBe(-32700);
@@ -133,16 +134,48 @@ describe('batch limit on /mcp', () => {
 });
 
 describe('GET /mcp', () => {
+  // Each stream a client opened with GET held a server and a socket for as long as the client liked (240 of them,
+  // 138 MB). The SDK's stateless handler answers GET (and DELETE) with 405 before it builds a server.
   it('is refused with 405: a server with no state between requests has no stream to offer', async () => {
     const r = await app.request('/mcp', { headers: { authorization: 'Bearer x', accept: 'text/event-stream' } });
     expect(r.status).toBe(405);
-    expect(r.headers.get('allow')).toBe('POST, DELETE');
+    expect(r.headers.get('allow')).toBe('POST');
   });
 
   it('still asks a caller with no token to authorize first', async () => {
     const r = await app.request('/mcp', { headers: { accept: 'text/event-stream' } });
     expect(r.status).toBe(401);
     expect(r.headers.get('www-authenticate')).toContain('Bearer');
+  });
+});
+
+describe('subscriptions/listen (2026-07-28)', () => {
+  // The same kind of idle stream as GET's: nothing here ever changes a list, so a listen stream would only hold a
+  // socket and a keepalive timer for whoever sends any `Bearer x`.
+  it('is refused at once, in a response that ends: no stream is held open', async () => {
+    const meta = { 'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientInfo': { name: 't', version: '0' }, 'io.modelcontextprotocol/clientCapabilities': {} };
+    const listen = { jsonrpc: '2.0', id: 1, method: 'subscriptions/listen', params: { notifications: { toolsListChanged: true }, _meta: meta } };
+    const r = await post(JSON.stringify(listen), { 'mcp-method': 'subscriptions/listen', 'mcp-protocol-version': '2026-07-28' });
+    expect(r.headers.get('content-type')).toContain('application/json');
+    expect(await r.json()).toMatchObject({ id: 1, error: { code: -32603, message: 'Subscription limit reached' } }); // read to its end
+  });
+});
+
+describe('a request the SDK refuses', () => {
+  // Any `Bearer x` can send one, up to the limiter's rate, and some refusals quote the caller's own text.
+  it('is logged as one line, with a newline the caller sent escaped', async () => {
+    const lines: string[] = [];
+    const error = vi.spyOn(console, 'error').mockImplementation((...args) => void lines.push(format(...args)));
+    try {
+      const meta = { 'io.modelcontextprotocol/protocolVersion': '2099-01-01\n[hashlock-mcp] forged', 'io.modelcontextprotocol/clientInfo': { name: 't', version: '0' }, 'io.modelcontextprotocol/clientCapabilities': {} };
+      const r = await post(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: { _meta: meta } }));
+      expect(r.status).toBe(400);
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).not.toContain('\n');
+      expect(lines[0]).toMatch(/^\[hashlock-mcp\] "\w+( \[\w+\])?: Unsupported protocol version: 2099-01-01\\n\[hashlock-mcp\] forged\\n +at /);
+    } finally {
+      error.mockRestore();
+    }
   });
 });
 

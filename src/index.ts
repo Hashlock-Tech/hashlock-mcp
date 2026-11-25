@@ -1,9 +1,10 @@
 // (the shebang is injected by tsup's banner — see tsup.config.ts)
 import { createRequire } from 'node:module';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { McpServer } from '@modelcontextprotocol/server';
+import { serveStdio } from '@modelcontextprotocol/server/stdio';
 import { HashlockClient } from './client.js';
 import { loadConfig } from './config.js';
+import { logSdkError } from './lib/errors.js';
 import { AgreementStore, SecretStore } from './secrets.js';
 import { registerTools } from './tools.js';
 
@@ -22,11 +23,12 @@ const api = new HashlockClient(cfg);
 const secrets = new SecretStore(cfg.secretsPath);
 
 const { version } = createRequire(import.meta.url)('../package.json') as { version: string }; // ships in the npm tarball
-const server = new McpServer({ name: 'hashlock', version });
-registerTools(server, api, secrets, AgreementStore.besides(cfg.secretsPath));
-
-const transport = new StdioServerTransport();
-await server.connect(transport);
+const agreements = AgreementStore.besides(cfg.secretsPath);
+serveStdio(() => {
+  const server = new McpServer({ name: 'hashlock', version });
+  registerTools(server, api, secrets, agreements);
+  return server;
+}, { onerror: logSdkError }); // stderr: stdout is the protocol
 console.error(
   `[hashlock-mcp] ready — API ${cfg.apiUrl}, auth: ${cfg.token ? 'token' : cfg.evmKey ? 'evm-key (autonomous SIWE)' : cfg.bankrApiKey ? 'bankr wallet (autonomous SIWE)' : 'none (read-only)'}`,
 );

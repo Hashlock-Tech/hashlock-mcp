@@ -1,4 +1,4 @@
-import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
+import type { ToolAnnotations } from '@modelcontextprotocol/server';
 
 /**
  * MCP tool annotations for both servers (stdio and hosted) — hints a client shows or acts on: a destructive tool asks

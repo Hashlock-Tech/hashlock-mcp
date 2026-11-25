@@ -1,4 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { fromBaseUnits, toBaseUnits, type Asset, type HashlockClient, type Rfq, type Thread } from './client.js';
 import { ann, READ, WRITE } from './lib/annotations.js';

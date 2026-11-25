@@ -1,4 +1,29 @@
+import { inspect } from 'node:util';
 import { okContent, type ToolContent } from './result.js';
+
+const LOG_PART = 1500;
+
+/**
+ * An error the SDK reports (onerror), as ONE stderr line, both servers: util.inspect of it (stack, cause chain, other
+ * fields such as a ZodError's issues), JSON-encoded, clipped to its first and last LOG_PART characters. Most errors are
+ * requests the SDK refused (an empty batch, a bad header, an unsupported protocol version), which any caller can send,
+ * and some quote the caller's own text: encoded, a newline in it cannot forge a log line, and clipped, a 1 MB protocol
+ * version is not a 1 MB log line. It never throws: on stdio, onerror runs where nothing catches.
+ */
+export const logSdkError = (e: unknown): void => {
+  let text: string;
+  try {
+    text = inspect(e, { depth: 3, breakLength: Infinity, maxStringLength: 4 * LOG_PART, maxArrayLength: 50 });
+  } catch {
+    try {
+      text = String((e as { stack?: unknown })?.stack ?? Object.prototype.toString.call(e));
+    } catch {
+      text = '[an error that cannot be printed]';
+    }
+  }
+  if (text.length > 2 * LOG_PART) text = `${text.slice(0, LOG_PART)} …(${text.length} chars)… ${text.slice(-LOG_PART)}`;
+  console.error('[hashlock-mcp]', JSON.stringify(text));
+};
 
 export type ErrorCode =
   | 'NOT_FOUND' | 'VALIDATION_ERROR' | 'UNAUTHORIZED'
