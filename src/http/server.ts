@@ -40,7 +40,10 @@ const isMessage = (m: unknown): boolean =>
 const NOT_JSON = Symbol('not JSON');
 
 // The same path from src/http/server.ts and from the bundle, dist/http/index.js. The image copies skills/ beside dist/.
-const skills = await loadSkills(fileURLToPath(new URL('../../skills', import.meta.url)));
+const skillsDir = fileURLToPath(new URL('../../skills', import.meta.url));
+// hashlock-markets is written for a developer key: its tools, and an agent that makes its own swap secret. hashlock-chat
+// is for a chat assistant, which has no settlement tools and never makes a secret.
+const skills = { developer: await loadSkills(skillsDir, 'hashlock-markets'), assistant: await loadSkills(skillsDir, 'hashlock-chat') };
 
 const bearer = (h: string | undefined): string | undefined =>
   h?.startsWith('Bearer ') ? h.slice(7).trim() : undefined;
@@ -66,9 +69,7 @@ export function createHttpApp(opts: HttpServerOptions): Hono {
   const handler = createMcpHandler(({ authInfo }) => {
     const token = authInfo!.token;
     const assistant = isAssistantKey(token);
-    // The skill is written for a developer key: these tools' names, and an agent that makes its own swap secret. A chat
-    // assistant has no settlement tools and must never make a secret, so its key gets no skill, and no resources.
-    const skill = assistant ? undefined : skills;
+    const skill = assistant ? skills.assistant : skills.developer;
     const server = new McpServer(
       { name: opts.name ?? 'hashlock', version: opts.version ?? '0.0.0' },
       {

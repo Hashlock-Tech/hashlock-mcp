@@ -33,7 +33,9 @@ Settlement **signing** (funding and claiming the HTLCs) stays with your own wall
 ## Install as a plugin — any agent client
 
 This repository is one plugin for every client: the hosted server (`https://hashlock.markets/mcp`, sign-in by
-OAuth) plus the [`hashlock-markets` skill](skills/hashlock-markets/SKILL.md). In a chat, the assistant finds assets,
+OAuth) plus two skills: [`hashlock-chat`](skills/hashlock-chat/SKILL.md) for an assistant acting for you in a chat,
+and [`hashlock-markets`](skills/hashlock-markets/SKILL.md) for an agent trading with its own keys. The hosted server also
+serves the matching one over MCP to clients that load skills from a server. In a chat, the assistant finds assets,
 posts requests and negotiates; you accept as the initiator, fund and claim on the deal page it links to.
 
 | Client | How |

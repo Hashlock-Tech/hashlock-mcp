@@ -7,7 +7,7 @@ import { createHttpApp } from './server.js';
 
 // The SDK's own client against the hosted app in process. The API is never called: nothing here runs a tool.
 const app = createHttpApp({ v1Url: 'http://127.0.0.1:9/v1' });
-const skillFile = (path: string) => readFileSync(new URL(`../../skills/hashlock-markets/${path}`, import.meta.url));
+const skillFile = (path: string, skill = 'hashlock-markets') => readFileSync(new URL(`../../skills/${skill}/${path}`, import.meta.url));
 const sha256 = (bytes: Buffer) => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 
 const clients: Client[] = [];
@@ -50,14 +50,15 @@ describe('a 2026-07-28 client', () => {
     expect((contents[0] as { text: string }).text).toBe(skillFile('SKILL.md').toString('utf8'));
   });
 
-  // The skill is written for a developer key's tools and has the agent make its own swap secret: a chat assistant has
-  // neither the settlement tools nor the right to make a secret.
-  it('gets no skill, and no resources, with an OAuth (chat assistant) key', async () => {
+  // hashlock-markets is written for a developer key's tools and has the agent make its own swap secret: a chat assistant
+  // has neither the settlement tools nor the right to make a secret, and gets hashlock-chat instead.
+  it('gets hashlock-chat, and not hashlock-markets, with an OAuth (chat assistant) key', async () => {
     const client = await modern('hk_oa_live_test');
-    const capabilities = client.getServerCapabilities();
-    expect(capabilities?.resources).toBeUndefined();
-    expect(Object.keys(capabilities?.extensions ?? {})).toEqual([]);
-    expect((await new SkillsClient(client).list()).skills).toEqual([]);
+    const { skills } = await new SkillsClient(client).list();
+    expect(skills.map((s) => s.frontmatter.name)).toEqual(['hashlock-chat']);
+    const files = skills[0]!.resources;
+    if (files === 'dynamic') throw new Error('a folder skill lists its files');
+    expect(files.map((f) => [f.uri, f.digest])).toEqual([['skill://hashlock-chat/SKILL.md', sha256(skillFile('SKILL.md', 'hashlock-chat'))]]);
     await expect(client.readResource({ uri: 'skill://hashlock-markets/SKILL.md' })).rejects.toThrow();
   });
 
