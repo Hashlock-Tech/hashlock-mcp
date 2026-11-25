@@ -2,14 +2,12 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { fromBaseUnits, toBaseUnits, type Asset, type HashlockClient, type Rfq, type Thread } from './client.js';
 import { ann, READ, WRITE } from './lib/annotations.js';
-import { amountOf, says, short, trade, type Shown } from './lib/confirm.js';
 import { wrapTool } from './lib/errors.js';
 import { okContent } from './lib/result.js';
 import { ns, output, s, scalar, toolRegistrar } from './lib/tool.js';
 import { pinnedAsset } from './pinned.js';
 import { normHex, sha256Hex, type AgreementStore, type AssetSnapshot, type SecretStore } from './secrets.js';
-import { claimMyLeg, feeForLeg, fundMyLeg, legView, refundMyLeg, releaseOwnSecret } from './settlement.js';
-import { checkDeal } from './trust.js';
+import { claimMyLeg, fundMyLeg, refundMyLeg, releaseOwnSecret } from './settlement.js';
 
 // ── output schemas: only what an agent acts on next; everything else passes through (lib/tool.ts) ──────────
 /** lib/errors.ts returns a failure as normal content, so every tool's result may be this instead. */
@@ -113,43 +111,6 @@ export function registerTools(server: McpServer, api: HashlockClient, secrets: S
       makerAccepted: t.makerAccepted,
       rfq: await describeRfq(r),
     };
-  }
-
-  // What the person confirms before a tool commits them or sends their money (lib/confirm.ts): the terms as the API
-  // holds them, shown with the decimals the money is converted with.
-  async function shownAsset(id: string) {
-    const a = await assetById(id);
-    if (!a) throw new Error(`asset ${id} is not in the registry`);
-    return { symbol: a.symbol, chain: a.chain, decimals: await decimalsOf(id) };
-  }
-  /**
-   * An asset as this agent agreed to it, with decimalsOf's rule (pinned, else the registry's) read from that record: one
-   * neither pins nor lists any more is named by its id.
-   */
-  async function agreedAsset(a: AssetSnapshot): Promise<Shown> {
-    const pinned = pinnedAsset(await api.familyOf(a.chain), a.isNative ? null : (a.address ?? ''), a.symbol);
-    const decimals = pinned?.decimals ?? (await assetById(a.id))?.decimals;
-    return decimals === undefined ? { id: a.id } : { symbol: a.symbol, chain: a.chain, decimals };
-  }
-  async function myUserId(): Promise<string> {
-    const id = (await api.me({ link: false })).user?.id;
-    if (!id) throw new Error('not authenticated');
-    return id;
-  }
-  /**
-   * This side's terms on a request at `quoteAmount` (base units): `requester` = it created the request, and pays the
-   * protocol fee on what it gives.
-   */
-  async function termsOn(rfq: Pick<Rfq, 'direction' | 'baseAssetId' | 'baseAmount' | 'quoteAssetId'>, requester: boolean, quoteAmount: string | null) {
-    const base = await shownAsset(rfq.baseAssetId);
-    const quote = await shownAsset(rfq.quoteAssetId);
-    const gives = rfq.direction === 'sell_base' ? base : quote;
-    const fee = requester ? { bps: await api.feeBps(), bitcoin: (await api.familyOf(gives.chain)) === 'btc' } : undefined;
-    return trade({ direction: rfq.direction, requester, base, baseAmount: rfq.baseAmount, quote, quoteAmount, fee });
-  }
-  /** Agreeing to a price, or settling, only on a request this agent created or quoted here: its side comes from that record. */
-  function agreedHere(rfqId: string): void {
-    if (!agreements.get(rfqId)) throw new Error(`request ${rfqId} was not created or quoted through this MCP — agree to it with your own wallet's app`);
   }
 
   // An accept answers either "agreed" (both sides in: the swap exists) or "waiting for the other side".
@@ -265,14 +226,6 @@ export function registerTools(server: McpServer, api: HashlockClient, secrets: S
           : described,
       );
     }),
-    async (a) => {
-      const base = await api.resolveAsset(a.base_asset);
-      const quote = await api.resolveAsset(a.quote_asset);
-      // A public request keeps no price: the API drops its askAmount.
-      const ask = a.visibility === 'private' && a.ask_price ? toBaseUnits(a.ask_price, await decimalsOf(quote.id)) : null;
-      const rfq = { direction: a.direction, baseAssetId: base.id, baseAmount: toBaseUnits(a.base_amount, await decimalsOf(base.id)), quoteAssetId: quote.id };
-      return says.request(await termsOn(rfq, true, ask), { private: a.visibility === 'private', target: a.target_address });
-    },
   );
 
   tool(
@@ -331,10 +284,6 @@ export function registerTools(server: McpServer, api: HashlockClient, secrets: S
       }
       return okContent({ ...(await describeThread(thread, rfq)), agreed: false, waiting_for: 'the requester to accept your quote' });
     }),
-    async ({ rfq_id, price }) => {
-      const { rfq } = await api.getRfq(rfq_id);
-      return says.quote(rfq_id, await termsOn(rfq, false, toBaseUnits(price, await decimalsOf(rfq.quoteAssetId))));
-    },
   );
 
   tool(
@@ -362,8 +311,11 @@ export function registerTools(server: McpServer, api: HashlockClient, secrets: S
         if (!a.price) throw new Error(`price is required for action=${a.action}`);
         const { rfq } = await api.getThread(a.thread_id);
         const base = toBaseUnits(a.price, await decimalsOf(rfq.quoteAssetId));
-        // Proposing, taking a counter and accepting are each this agent agreeing to `base` in this thread.
-        agreedHere(rfq.id);
+        // Proposing, taking a counter and accepting are each this agent agreeing to `base` in this thread —
+        // only on a request it created or quoted here (its side comes from that record, not from the API).
+        if (!agreements.get(rfq.id)) {
+          throw new Error(`request ${rfq.id} was not created or quoted through this MCP — agree to it with your own wallet's app`);
+        }
         return { base, rfq };
       };
       switch (a.action) {
@@ -404,14 +356,6 @@ export function registerTools(server: McpServer, api: HashlockClient, secrets: S
         }
       }
     }),
-    // Only the actions that commit to a price; one without its price fails in the tool, as before.
-    async (a) => {
-      if (!a.price || !(a.action === 'propose' || a.action === 'accept_proposal' || a.action === 'accept')) return null;
-      const [{ thread, rfq }, me] = await Promise.all([api.getThread(a.thread_id), myUserId()]);
-      agreedHere(rfq.id); // refused before the person is asked, as the tool would refuse it after
-      const terms = await termsOn(rfq, me === thread.takerId, toBaseUnits(a.price, await decimalsOf(rfq.quoteAssetId)));
-      return a.action === 'propose' ? says.counter(a.thread_id, terms) : a.action === 'accept' ? says.accept(a.thread_id, terms) : says.take(a.thread_id, terms, true);
-    },
   );
 
   tool(
@@ -472,11 +416,6 @@ export function registerTools(server: McpServer, api: HashlockClient, secrets: S
       agreements.recordAddress(swap_id, { chain, ...(leg ? { leg } : {}), address, threadId: swap.threadId, hashlock: normHex(swap.hashlock) });
       return okContent(swap);
     }),
-    // The wallet API takes any well-formed address here (only /v1 requires a proven one): the person's yes is the check.
-    async ({ swap_id, chain, address, leg }) => {
-      const [{ swap }, me] = await Promise.all([api.getSwap(swap_id), myUserId()]);
-      return says.address(swap, me, { chain, address, leg }, await api.familyOf(chain));
-    },
   );
 
   tool(
@@ -554,20 +493,6 @@ export function registerTools(server: McpServer, api: HashlockClient, secrets: S
       const res = await fundMyLeg(api, swap, secrets, agreements);
       return okContent({ ...res, note: 'On-chain funding submitted; the watcher will advance the swap.' });
     }),
-    async ({ swap_id }) => {
-      const { swap } = await api.getSwap(swap_id);
-      // fundMyLeg's own check of the deal, so a call it would refuse is refused before the person is asked; its assets
-      // are the agreement's copy that fundMyLeg funds from, so one that has left the registry is still named.
-      const deal = await checkDeal(api, swap, agreements);
-      const [give, get] = [legView(swap, deal.mine), legView(swap, deal.theirs)];
-      const [mine, theirs] = await Promise.all([agreedAsset(deal.asset[deal.mine]), agreedAsset(deal.asset[deal.theirs])]);
-      const fee = feeForLeg(swap, give.assetId);
-      return (
-        `Fund your leg of swap ${short(swap.id)}: this agent's wallet sends ${amountOf(give.amount, mine)} into the escrow` +
-        (fee ? `, and a protocol fee of ${amountOf(fee, mine)}, paid at funding and not refunded` : '') +
-        `. You receive ${amountOf(get.amount, theirs)} when the swap settles. Once sent, the escrowed amount comes back only by refund after the timelock.`
-      );
-    },
   );
 
   tool(

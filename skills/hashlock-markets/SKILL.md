@@ -101,9 +101,8 @@ no wallet and must not hold their swap secret. Connecting the server signs the p
 
 - **You do:** read the asset list and the board, read quotes (`list_rfq_threads`, `get_thread`), and post a request
   (`create_rfq`) the person asked for.
-- **Only on the person's explicit instruction**, because each one binds them to a price: `quote_rfq`,
-  `propose_price`, `accept_proposal` and `accept_terms`. Before each, and before `create_rfq` and `set_swap_address`,
-  read the terms (or the full address) back to them and get their yes. Accept only when they are NOT the initiator: if the server
+- **Only on the person's explicit instruction**, because each one binds them to a price or sets where they are
+  paid: `create_rfq`, `quote_rfq`, `propose_price`, `accept_proposal`, `accept_terms` and `set_swap_address`. Accept only when they are NOT the initiator: if the server
   answers that the initiator must pass a hashlock, they are the initiator — call `open_deal` instead.
 - **You never:** generate a swap secret or a hashlock, call `build_fund` / `build_claim` / `build_refund`, or
   broadcast. Those need the person's wallet — connected through OAuth, the server does not even offer them, and its

@@ -150,7 +150,7 @@ describe('hosted tools: every result validates against its output schema', async
     const body = routes[`${init?.method ?? 'GET'} ${path}`];
     return body === undefined ? { status: 404, json: { error: `no route ${path}` } } : { status: 200, json: body };
   };
-  const call = await connect((s) => registerHostedTools(s, callV1, { settlement: true, config: async () => ({}) }));
+  const call = await connect((s) => registerHostedTools(s, callV1, { settlement: true }));
 
   it('passes the /v1 body through as structuredContent', async () => {
     for (const [name, args] of [
@@ -210,7 +210,7 @@ describe('hosted tools for a chat assistant: no hashlock reaches /v1', () => {
   it('drops a hashlock the assistant sends to accept_terms, accept_proposal and propose_price', async () => {
     const bodies: unknown[] = [];
     const call = await connect((s) =>
-      registerHostedTools(s, async (_path, init) => (bodies.push(init?.body), { status: 200, json: { thread } }), { settlement: false, config: async () => ({}) }),
+      registerHostedTools(s, async (_path, init) => (bodies.push(init?.body), { status: 200, json: { thread } }), { settlement: false }),
     );
     for (const name of ['accept_terms', 'accept_proposal', 'propose_price'])
       await call(name, { id: ID, quoteAmount: '3500000000', ...(name === 'accept_proposal' ? { accept: true } : {}), hashlock: 'ab'.repeat(32) });

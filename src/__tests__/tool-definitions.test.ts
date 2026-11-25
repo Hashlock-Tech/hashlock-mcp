@@ -16,7 +16,7 @@ function stdio() {
 }
 function hosted(settlement = true) {
   const s = new McpServer({ name: 't', version: '0' });
-  registerHostedTools(s, async () => ({ status: 200, json: {} }), { settlement, config: async () => ({}) });
+  registerHostedTools(s, async () => ({ status: 200, json: {} }), { settlement });
   return toolsOf(s);
 }
 
