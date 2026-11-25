@@ -23,7 +23,8 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
-          cache: pnpm
+          # No `cache: pnpm`: the Actions cache is shared by every job on the branch, and dependency code in any of them
+          # can write it; this job builds the tarball npm publishes with provenance.
       - name: Verify tag matches package.json version
         run: |
           TAG="${GITHUB_REF_NAME#v}"

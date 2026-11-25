@@ -1,10 +1,13 @@
 name: CI
 
+# On develop too, so a pull request to develop is tested before it merges. A push to develop or main builds the image
+# the stands run, and image.yml runs the same checks before it builds: a red test there means no image. The suite calls
+# no network and reads no secrets.
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
 
 jobs:
   build:
@@ -24,3 +27,4 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm build
+      - run: pnpm test

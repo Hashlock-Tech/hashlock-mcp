@@ -5,25 +5,58 @@ name: Image
 on:
   push:
     branches: [main, develop]
-    paths: ['src/**', 'skills/**', 'Dockerfile', 'package.json', 'pnpm-lock.yaml', 'tsup.config.ts', '.github/workflows/image.yml']
+    paths: ['src/**', 'skills/**', 'Dockerfile', 'package.json', 'pnpm-lock.yaml', 'tsconfig.json', 'tsup.config.ts', '.github/workflows/image.yml']
   workflow_dispatch:
 
 permissions:
   contents: read
-  packages: write
-  id-token: write # cosign keyless signing: the OIDC token Fulcio issues the signing certificate against
+
+# One run per branch at a time, so of two pushes queued together the older cannot finish last and leave :develop or
+# :main behind. A running build is never cancelled mid-sign; a newer push replaces a run still waiting. (Re-running an
+# old run by hand still retags that old commit. A tag left unsigned by a failed signing step is refused by the stands,
+# which verify the signature before they pull.)
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   IMAGE: ghcr.io/hashlock-tech/hashlock-mcp
 
 jobs:
-  build:
+  # No image unless the tests pass: the stands pull :develop and :main. A job of its own, holding no OIDC token and no
+  # registry write, so dependency code it runs cannot sign or push an image as this workflow (as release.yml's build).
+  # It can write the GitHub Actions cache, which every job and workflow on the branch shares: so the build job below
+  # restores nothing from that cache.
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4 — reads the version from packageManager
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm build
+      - run: pnpm test
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # cosign keyless signing: the OIDC token Fulcio issues the signing certificate against
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+        with:
+          cache-binary: false # a buildx it would download is fetched, not restored from the shared cache
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
@@ -44,8 +77,6 @@ jobs:
             ${{ env.IMAGE }}:${{ github.ref_name }}
             ${{ env.IMAGE }}:${{ github.sha }}
             ${{ github.ref == 'refs/heads/main' && format('{0}:latest', env.IMAGE) || '' }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
       # Sign what was just pushed, keyless and BY DIGEST (tags can be moved by anyone with push rights).
       # hashlock-markets' deploy verifies this image against this workflow's identity before pulling it
       # (VAPT #34). Fatal on purpose: with verification enforced there, an unsigned :latest would stop every
