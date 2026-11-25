@@ -155,7 +155,8 @@ that do not speak OAuth can still send a key they created themselves as `Authori
 
 A client connected through OAuth is treated as a chat assistant acting for a person: it gets every tool except
 `build_fund`, `build_claim`, `build_refund` and `broadcast_tx`, since it holds no wallet to sign them with, and the person
-funds, claims and refunds on the deal page (`dealUrl`). Its price tools take no `hashlock` either: when the person is the
+funds, claims and refunds on the deal page, which `open_deal` hands them (or returns as `dealUrl` when the client
+cannot open it). Its price tools take no `hashlock` either: when the person is the
 initiator, they accept on the deal page, whose browser makes and keeps the secret. A key you created yourself (an agent with its own wallet) gets
 all of them.
 

@@ -38,7 +38,7 @@ const DESTRUCTIVE = {
 
 describe.each([
   ['stdio', stdio, 18],
-  ['hosted', hosted, 25],
+  ['hosted', hosted, 26],
 ] as const)('%s tool definitions', (name, build, count) => {
   const tools = build();
   it(`registers ${count} tools, each with a title and read/destructive hints`, () => {
