@@ -1,0 +1,28 @@
+import { SkillsExtension } from '@modelcontextprotocol/server/ext/skills';
+import { nodeSkillFiles } from '@modelcontextprotocol/server/ext/skills/node';
+
+/** In the skill's folder for an external skills catalog (the Bankr skills PR syncs from it); not part of the skill. */
+const CATALOG_ONLY = new Set(['hashlock-markets/catalog.json', 'hashlock-markets/logo.svg']);
+
+/**
+ * The agent skill under `root` (the repo's skills/ folder), which the hosted server serves to a developer key's client
+ * through the Skills extension.
+ * Strict: a skill the SDK would skip fails the load instead, and so does one past the 400 KB Claude accepts, and so does
+ * a folder with no skill in it (strict only warns on that, and the server would advertise an empty catalog). A failed
+ * load is logged to stderr and gives undefined, so the server still serves its tools; skills.test.ts loads the skill
+ * the same way, so a broken skill fails the tests instead.
+ */
+export async function loadSkills(root: string) {
+  const disk = nodeSkillFiles(root);
+  try {
+    const catalog = await SkillsExtension.load(
+      { list: async (dir) => (await disk.list(dir)).filter((e) => !CATALOG_ONLY.has(`${dir}/${e.name}`)), read: (path) => disk.read(path) },
+      { strict: true, limits: { bytes: 400 * 1024 } },
+    );
+    if (catalog.entries.length === 0) throw new Error(`no SKILL.md under ${root}`);
+    return catalog;
+  } catch (e) {
+    console.error('[hashlock-mcp] the agent skill is NOT served (the tools are):', e);
+    return undefined;
+  }
+}

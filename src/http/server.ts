@@ -1,8 +1,10 @@
+import { fileURLToPath } from 'node:url';
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
 import { logSdkError } from '../lib/errors.js';
+import { loadSkills } from '../lib/skills.js';
 import { keyAnswered, rateLimit } from './rate-limit.js';
 import { ASSISTANT_INSTRUCTIONS, HOSTED_INSTRUCTIONS, isAssistantKey, registerHostedTools } from './tools.js';
 import { makeCallV1 } from './v1-client.js';
@@ -37,6 +39,9 @@ const isMessage = (m: unknown): boolean =>
 
 const NOT_JSON = Symbol('not JSON');
 
+// The same path from src/http/server.ts and from the bundle, dist/http/index.js. The image copies skills/ beside dist/.
+const skills = await loadSkills(fileURLToPath(new URL('../../skills', import.meta.url)));
+
 const bearer = (h: string | undefined): string | undefined =>
   h?.startsWith('Bearer ') ? h.slice(7).trim() : undefined;
 
@@ -52,9 +57,12 @@ export function createHttpApp(opts: HttpServerOptions): Hono {
   const handler = createMcpHandler(({ authInfo }) => {
     const token = authInfo!.token;
     const assistant = isAssistantKey(token);
+    // The skill is written for a developer key: these tools' names, and an agent that makes its own swap secret. A chat
+    // assistant has no settlement tools and must never make a secret, so its key gets no skill, and no resources.
+    const skill = assistant ? undefined : skills;
     const server = new McpServer(
       { name: opts.name ?? 'hashlock', version: opts.version ?? '0.0.0' },
-      { instructions: assistant ? ASSISTANT_INSTRUCTIONS : HOSTED_INSTRUCTIONS, capabilities: { tools: { listChanged: false } } },
+      { instructions: assistant ? ASSISTANT_INSTRUCTIONS : HOSTED_INSTRUCTIONS, capabilities: { tools: { listChanged: false }, ...(skill && { resources: { listChanged: false } }) } },
     );
     const callV1 = makeCallV1(opts.v1Url, token);
     registerHostedTools(
@@ -66,6 +74,7 @@ export function createHttpApp(opts: HttpServerOptions): Hono {
       },
       { settlement: !assistant },
     );
+    skill?.attach(server);
     return server;
   }, { maxSubscriptions: 0, onerror: logSdkError });
 

@@ -17,6 +17,7 @@ ENV HASHLOCK_V1_URL=https://api.hashlock.markets/v1 \
     PORT=8080
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
+COPY skills ./skills
 COPY package.json ./
 EXPOSE 8080
 USER node
