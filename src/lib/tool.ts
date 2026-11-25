@@ -1,16 +1,31 @@
 import type { McpServer, ToolAnnotations, ToolCallback } from '@modelcontextprotocol/server';
 import { z } from 'zod';
+import { confirmFirst, type Describe } from './confirm.js';
 
 /**
  * registerTool for both servers, with the title taken from the annotations. Every output schema is a PASSTHROUGH
  * object: the SDK validates each non-error result against it on the server, and its client validates the JSON
  * Schema again — a plain raw shape converts to `additionalProperties: false`, so any field not declared would fail
  * a real client's call. Declare only what an agent acts on next, every field optional.
+ * A tool that commits the person to a price or sends their money passes `confirm`: the person confirms its message
+ * first, through lib/confirm.ts, titled with the tool's title.
  */
 export const toolRegistrar =
   (server: McpServer) =>
-  <I extends z.ZodRawShape>(name: string, description: string, inputSchema: I, annotations: ToolAnnotations, outputSchema: z.ZodObject, cb: ToolCallback<z.ZodObject<I>>) =>
-    server.registerTool(name, { title: annotations.title, description, inputSchema: dialectNeutral(z.object(inputSchema)), outputSchema, annotations }, cb);
+  <I extends z.ZodRawShape>(
+    name: string,
+    description: string,
+    inputSchema: I,
+    annotations: ToolAnnotations,
+    outputSchema: z.ZodObject,
+    cb: ToolCallback<z.ZodObject<I>>,
+    confirm?: Describe<z.output<z.ZodObject<I>>>,
+  ) =>
+    server.registerTool(
+      name,
+      { title: annotations.title, description, inputSchema: dialectNeutral(z.object(inputSchema)), outputSchema, annotations },
+      confirm ? confirmFirst(server, annotations.title!, confirm, cb) : cb,
+    );
 
 /**
  * `schema`, listed with no `$schema`. The SDK has zod stamp draft 2020-12 on every tool schema (v1 stamped draft-07),

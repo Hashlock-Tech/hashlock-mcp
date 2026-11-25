@@ -48,6 +48,15 @@ const bearer = (h: string | undefined): string | undefined =>
 export function createHttpApp(opts: HttpServerOptions): Hono {
   const app = new Hono();
 
+  // The API's public /api/config, served by the process behind /v1 (compose: http://api:3000/api/config): the protocol fee
+  // and each chain's family and timelock, which a confirmation states and /v1 does not carry before a swap exists. No key.
+  const configUrl = new URL('../api/config', `${opts.v1Url.replace(/\/+$/, '')}/`).href;
+  const config = async (): Promise<unknown> => {
+    const r = await fetch(configUrl, { signal: AbortSignal.timeout(15_000) });
+    if (!r.ok) throw new Error(`/api/config answered ${r.status}`);
+    return r.json();
+  };
+
   // One server per request, for the caller whose key the route hands over as authInfo. Tools proxy to /v1 with THAT key.
   // A key from the OAuth flow is a chat assistant's: it gets the tools without the settlement builders and relay
   // (isAssistantKey). The handler serves 2025-era clients (initialize) and 2026-07-28 ones alike.
@@ -62,7 +71,14 @@ export function createHttpApp(opts: HttpServerOptions): Hono {
     const skill = assistant ? undefined : skills;
     const server = new McpServer(
       { name: opts.name ?? 'hashlock', version: opts.version ?? '0.0.0' },
-      { instructions: assistant ? ASSISTANT_INSTRUCTIONS : HOSTED_INSTRUCTIONS, capabilities: { tools: { listChanged: false }, ...(skill && { resources: { listChanged: false } }) } },
+      {
+        instructions: assistant ? ASSISTANT_INSTRUCTIONS : HOSTED_INSTRUCTIONS,
+        capabilities: { tools: { listChanged: false }, ...(skill && { resources: { listChanged: false } }) },
+        // A 2026-07-28 client answers an ask and retries the call, which any fresh instance serves. The SDK's shim would
+        // instead push the ask to a 2025-era client and wait for an answer that arrives on another request, to another
+        // instance: it would hang. Off, and lib/confirm.ts never asks a client this instance did not see initialize.
+        inputRequired: { legacyShim: false },
+      },
     );
     const callV1 = makeCallV1(opts.v1Url, token);
     registerHostedTools(
@@ -72,7 +88,7 @@ export function createHttpApp(opts: HttpServerOptions): Hono {
         keyAnswered(token, r.status); // what earns this key a rate-limit bucket of its own, or loses it
         return r;
       },
-      { settlement: !assistant },
+      { settlement: !assistant, config },
     );
     skill?.attach(server);
     return server;

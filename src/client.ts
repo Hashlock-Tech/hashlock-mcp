@@ -267,6 +267,12 @@ export class HashlockClient {
     }
     return this.chainCfg;
   }
+  /** The protocol fee rate from GET /config, read now rather than cached: a confirmation states the API's current one. */
+  async feeBps(): Promise<number> {
+    const bps = (await this.req<Partial<ChainConfig>>('/config', { auth: false })).fee?.bps;
+    if (typeof bps !== 'number') throw new Error('the protocol fee could not be read from /config');
+    return bps;
+  }
   /**
    * WHICH FAMILY A CHAIN BELONGS TO, taken from the server's own registry rather than guessed from its
    * name. The guess (settlement.ts familyOf) reads 'solana' out of the string and calls everything else

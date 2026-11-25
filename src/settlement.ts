@@ -80,7 +80,7 @@ interface LegView {
   claimTx: string | null;
 }
 
-function legView(swap: Swap, leg: Leg): LegView {
+export function legView(swap: Swap, leg: Leg): LegView {
   const p = leg === 'a';
   return {
     leg,
