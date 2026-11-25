@@ -133,6 +133,60 @@ describe('batch limit on /mcp', () => {
   });
 });
 
+describe('CORS on /mcp', () => {
+  // A 2025-era browser client opens GET (the SSE stream) with Authorization and MCP-Protocol-Version, which need a
+  // preflight. A failed preflight reaches it as a network TypeError; the handler's 405 is what it handles.
+  it.each(['GET', 'POST', 'DELETE'])('allows a browser preflight for %s with the headers MCP clients send', async (method) => {
+    const asked = ['authorization', 'content-type', 'mcp-protocol-version', 'mcp-method', 'mcp-name', 'mcp-param-chain'];
+    const r = await app.request('/mcp', {
+      method: 'OPTIONS',
+      headers: { origin: 'https://client.example', 'access-control-request-method': method, 'access-control-request-headers': asked.join(', ') },
+    });
+    expect(r.status).toBe(204);
+    expect(r.headers.get('access-control-allow-origin')).toBe('*');
+    expect(r.headers.get('access-control-allow-methods')?.split(',')).toContain(method);
+    expect(r.headers.get('access-control-allow-headers')?.toLowerCase().split(',')).toEqual(expect.arrayContaining(asked));
+  });
+
+  it.each(['GET', 'DELETE'])('answers a browser client\'s %s with a 405 it can read, and holds no stream', async (method) => {
+    const r = await app.request('/mcp', {
+      method,
+      headers: { origin: 'https://client.example', authorization: 'Bearer x', accept: 'text/event-stream', 'mcp-protocol-version': '2025-06-18' },
+    });
+    expect(r.status).toBe(405);
+    expect(r.headers.get('access-control-allow-origin')).toBe('*');
+    expect(r.headers.get('content-type') ?? '').not.toContain('text/event-stream');
+  });
+
+  it("lets a browser client read the 401's pointer to the OAuth metadata", async () => {
+    const r = await createHttpApp({ v1Url: 'http://127.0.0.1:9/v1', publicUrl: 'https://mcp.example' }).request('/mcp', {
+      method: 'POST',
+      headers: { origin: 'https://client.example' },
+    });
+    expect(r.status).toBe(401);
+    expect(r.headers.get('access-control-expose-headers')?.toLowerCase().split(',')).toContain('www-authenticate');
+    expect(r.headers.get('www-authenticate')).toContain('resource_metadata="https://mcp.example/.well-known/oauth-protected-resource"');
+  });
+
+  it("lets a browser client read the limiter's backoff on a 429", async () => {
+    const before = process.env.MCP_RATE_LIMIT_MAX;
+    process.env.MCP_RATE_LIMIT_MAX = '1';
+    const strict = createHttpApp({ v1Url: 'http://127.0.0.1:9/v1' });
+    if (before === undefined) delete process.env.MCP_RATE_LIMIT_MAX;
+    else process.env.MCP_RATE_LIMIT_MAX = before;
+    const ping = () =>
+      strict.request('/mcp', { method: 'POST', body: '{}', headers: { origin: 'https://client.example', authorization: 'Bearer x', 'x-forwarded-for': '4.4.4.4' } });
+    await ping();
+    const r = await ping();
+    expect(r.status).toBe(429);
+    const exposed = r.headers.get('access-control-expose-headers')?.toLowerCase().split(',');
+    for (const h of ['retry-after', 'ratelimit-limit', 'ratelimit-remaining', 'ratelimit-reset']) {
+      expect(r.headers.get(h), h).not.toBeNull();
+      expect(exposed, h).toContain(h);
+    }
+  });
+});
+
 describe('GET /mcp', () => {
   // Each stream a client opened with GET held a server and a socket for as long as the client liked (240 of them,
   // 138 MB). The SDK's stateless handler answers GET (and DELETE) with 405 before it builds a server.

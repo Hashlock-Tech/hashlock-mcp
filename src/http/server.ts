@@ -69,7 +69,17 @@ export function createHttpApp(opts: HttpServerOptions): Hono {
     return server;
   }, { maxSubscriptions: 0, onerror: logSdkError });
 
-  app.use('/mcp', cors({ origin: '*', allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'], allowHeaders: ['Content-Type', 'Authorization', 'Mcp-Session-Id'], exposeHeaders: ['Mcp-Session-Id'] }));
+  // A browser client sends MCP-Protocol-Version, and from 2026-07-28 Mcp-Method, Mcp-Name and Mcp-Param-* headers too:
+  // with no allowHeaders list, a preflight is allowed whatever headers it asks for. Auth is a bearer header, not a
+  // cookie, so any origin may send it. Exposed, so a browser client can read them: WWW-Authenticate, the 401's
+  // resource_metadata pointer, and the backoff the limiter below sends with a 429. GET and DELETE are allowed too:
+  // a 2025-era browser client opens GET (the SSE stream) with headers that need a preflight, and must get the handler's
+  // 405, which it handles, not a failed preflight, which it sees only as a network error. No stream is ever held.
+  app.use('/mcp', cors({
+    origin: '*',
+    allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+    exposeHeaders: ['WWW-Authenticate', 'Retry-After', 'RateLimit-Limit', 'RateLimit-Remaining', 'RateLimit-Reset'],
+  }));
 
   // Bound the public endpoint itself. /v1 limits per API key downstream, but that only helps once a
   // credential is presented — this sits in front of that. Per address, until /v1 has accepted the key.
