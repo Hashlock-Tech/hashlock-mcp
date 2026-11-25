@@ -115,7 +115,10 @@ export const TRON: Record<Net, Rail> = {
       'TCx9hPy3YGq5jdgA636dZs8PhhZJA257sy',
       'TULwQLtPrq8ie3Qg3zLLBT9wKFara6Eco3',
     ],
-    tokens: { TLjTS6iKGdJq7NmLqkph2noissPxjQxk2y: t('USDT', 6) },
+    tokens: {
+      TLjTS6iKGdJq7NmLqkph2noissPxjQxk2y: t('USDT', 6), // the dev stand's own test token
+      TXYZopYRdj2D9XRtbG411XZZ3kM5VkAeBf: t('USDT', 6), // Nile's public test USDT (the Nile faucet), the sandbox's
+    },
   },
 };
 
