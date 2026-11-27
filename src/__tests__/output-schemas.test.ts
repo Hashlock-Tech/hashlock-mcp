@@ -136,6 +136,11 @@ describe('hosted tools: every result validates against its output schema', async
     [`GET /rfqs/${ID}`]: { rfq: v1Rfq },
     [`GET /rfqs/${ID}/threads`]: { threads: [v1Thread] },
     'GET /swaps': { swaps: [swap], nextCursor: null },
+    // Only this exact query answers: a list_events that drops or renames `after` / `limit` gets a 404.
+    'GET /events?after=41&limit=50': {
+      events: [{ id: 42, type: 'quote.created', createdAt: '2026-11-02T00:00:00Z', rfqId: ID, threadId: ID, quoteAmount: '3500000000' }],
+      cursor: '43', // the publish seq, not the event id
+    },
     [`GET /swaps/${ID}`]: { swap },
     [`GET /threads/${ID}`]: { thread: v1Thread, rfq: v1Rfq, messages: [], swap: null },
     'GET /wallets/nonce': { nonce: 'n1' },
@@ -161,6 +166,7 @@ describe('hosted tools: every result validates against its output schema', async
       ['get_rfq', { id: ID }],
       ['list_rfq_threads', { id: ID }],
       ['list_swaps', {}],
+      ['list_events', { after: '41', limit: 50 }],
       ['swap_status', { id: ID }],
       ['quote_rfq', { id: ID, quoteAmount: '3500000000' }],
       ['accept_terms', { id: ID, quoteAmount: '3500000000' }],

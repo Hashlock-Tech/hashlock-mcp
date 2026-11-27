@@ -41,10 +41,15 @@ Not there? `request_listing` with the token's contract (EVM) or mint (Solana) ad
 
 ## 3. Compare quotes
 
-`list_rfq_threads` on the person's request: one thread per maker, with the price on the table
-(`currentQuoteAmount`) and any counter (`pendingAmount`). When a counterparty has made its name public, the
-thread carries `counterpartyName` and `counterpartyStats` (deals done, walk-aways, speed): show them beside
-the price, with the price per unit.
+To compare quotes, call `list_rfq_threads` on the person's request: it is the record, one thread per maker,
+with the price on the table (`currentQuoteAmount`) and any counter (`pendingAmount`). When a counterparty has made its
+name public, the thread carries `counterpartyName` and `counterpartyStats` (deals done, walk-aways, speed):
+show them beside the price, with the price per unit.
+
+For "anything new?" within a conversation, `list_events` names each new quote, counter, message and
+deal step since your last call: pass the `cursor` it returned last time (the first call, without one, shows
+only the latest events) and keep the new one. Events are hints, not the record: one can be missing, so read
+the thread or swap it names, and still check the person's request and open swaps directly.
 
 ## 4. Negotiate
 
@@ -68,8 +73,8 @@ account has not linked it: they link it on the site.
 
 ## 6. Follow the swap
 
-`swap_status` (all of them: `list_swaps`) shows the status and both legs. The maker funds leg a, the taker
-leg b.
+`swap_status` (all of them: `list_swaps`) shows the status and both legs: check it on every open swap, and
+again before a timelock. The maker funds leg a, the taker leg b.
 
 | Status | Meaning |
 |---|---|

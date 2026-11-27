@@ -64,7 +64,7 @@ describe('a 2026-07-28 client', () => {
 
   it('lists the tools', async () => {
     const { tools } = await (await modern()).listTools();
-    expect(tools).toHaveLength(26);
+    expect(tools).toHaveLength(27);
     expect(tools.map((t) => t.name)).toContain('broadcast_tx');
   });
 });
@@ -75,6 +75,6 @@ describe.each(['2025-06-18', '2025-11-25'])('a %s client', (version) => {
     expect(client.getProtocolEra()).toBe('legacy');
     expect(client.getNegotiatedProtocolVersion()).toBe(version);
     expect(client.getInstructions()).toContain('broadcast_tx');
-    expect((await client.listTools()).tools).toHaveLength(26);
+    expect((await client.listTools()).tools).toHaveLength(27);
   });
 });
