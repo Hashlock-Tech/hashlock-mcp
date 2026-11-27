@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "hashlock-markets",
-  "version": "1.15.1",
+  "version": "1.16.0",
   "description": "Trade crypto peer-to-peer on Hashlock Markets, a non-custodial OTC desk: post or answer a request for quote, negotiate, and settle atomically through hash-time-locked escrow across Bitcoin, Ethereum, Base, Robinhood Chain, TRON and Solana. Both sides are paid or both are refunded; Hashlock never holds keys or funds.",
   "author": {
     "name": "Hashlock Markets",
